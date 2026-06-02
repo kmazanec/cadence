@@ -114,6 +114,15 @@ solid.** Lower tiers are cut from the bottom up; nothing in P0 is sacrificed for
     the clarifying-question path, and a resilience recovery.
 11. A **model abstraction** so the underlying LLM is swappable for evaluation, with one sensible
     default, exposing which configured models are structured-output / tool-calling capable.
+11a. **(Promoted from Deferred — architecture v2)** **Streaming responses:** the UI streams the
+    final assistant response tokens for a premium live-typing feel. Implemented via the safe pattern
+    (stream presentation tokens; read tool-derived/structured content from graph state — not from
+    streamed message events — to avoid the documented streaming-corruption footgun). See ADR-002.
+11b. **(Promoted from Deferred — architecture v2)** **Durable log persistence (dual-path):** logged
+    entries persist to **Postgres when configured (`DATABASE_URL`), else SQLite** by default — behind
+    one repository seam, so the clean-clone demo runs with no service while the production DB path is
+    real and demonstrated. See ADR-011. (Supersedes the original "session-local store" framing of
+    req 15 and Deferred #1.)
 
 **P1 — Signature differentiators (cheap, dataset-backed):**
 12. **Injury avoidance:** the generator accepts an injured-joint constraint (e.g. "avoid loading my
@@ -129,6 +138,20 @@ solid.** Lower tiers are cut from the bottom up; nothing in P0 is sacrificed for
 15. **Observability:** each LLM call and tool invocation is traced (structured logging or a tracing
     integration), supporting debugging, the demo, and the production-evaluation story.
 
+**Committed stretch features (architecture v2 — beyond original PRD, built after P0+P1 core; cut
+before any core if budget tightens):**
+16. **Tiny model-eval harness (routing split-test):** a runnable script scoring ~10–15 labeled
+    routing cases across ≥2 configured models, reporting routing accuracy + latency per model — turning
+    the README's "how I'd evaluate" from prose into runnable proof and demonstrating the model
+    abstraction's split-test promise. See ADR-019. (Note: a *formal* eval pipeline remains deferred;
+    this is a deliberately small seed.)
+17. **Visible "why these?" explanation panel:** the relation-shaped explanation payload (the §7.7c
+    seam) is surfaced in the UI as a clean expandable panel on generated workouts ("avoided knee ·
+    paired both sides · matched chest"), previewing M5's headline explainability. See ADR-012/ADR-019.
+18. **Coach voice/personality polish:** a cohesive coach personality (system prompt + warm microcopy
+    across responses, clarifications, and empty/recovery states) extending the brand-voice contract.
+    See ADR-013/ADR-019.
+
 ### Out of Scope
 
 1. User accounts, authentication, or multi-user separation.
@@ -142,14 +165,15 @@ solid.** Lower tiers are cut from the bottom up; nothing in P0 is sacrificed for
 
 ### Deferred
 
-1. **Cross-session persistence of users and history** — P0 logging persists entries to a local
-   store for the current demo, but durable, multi-session user history is deferred (no real users
-   in scope).
-2. **Streaming responses** (a brief stretch goal) — deferred; the UI may render complete responses.
-   Rationale: lower correctness signal than the chosen stretches for the time budget.
-3. **A formal automated eval/split-test harness** — deferred to a description in the README's
-   evaluation section; the model abstraction makes it *possible* but building the harness is out of
-   the time budget. Rationale: the brief asks how we'd evaluate, not for a running eval suite.
+1. ~~**Cross-session persistence of users and history**~~ — **PARTIALLY PROMOTED (architecture v2):**
+   durable single-store persistence is now in scope via the dual-path Postgres/SQLite repository
+   (req 11b, ADR-011). What remains deferred is **multi-user / per-member** history and identity — no
+   real users in M1 (that arrives with auth in M6).
+2. ~~**Streaming responses**~~ — **PROMOTED to P0 (architecture v2, req 11a, ADR-002).** Final-token
+   SSE streaming with the safe pattern is now an M1 deliverable.
+3. **A formal automated eval/split-test harness** — still deferred as a *formal* harness; however a
+   **tiny seed** eval script is now a committed stretch feature (req 16, ADR-019). The full pipeline
+   is the M-cross-cutting milestone (§10).
 
 ## 5. Requirements
 
@@ -517,3 +541,4 @@ becomes one client of the same platform.
 |------|--------|------------|
 | 2026-06-02 | Initial draft. Locked: name "Cadence"; Core+1–2 signature stretches reframed as P0/P1/P2 tiers with branded UI elevated to P0; clarifying-question low-confidence handling; warmup/main/cooldown workout structure; logger resolves-or-flags (no invention); local persistence for logs; OpenRouter-style model abstraction with eval/split-test story in README; injury-avoidance + bilateral-pairing (P1), multi-turn memory + observability (P2). | User + PM |
 | 2026-06-02 | Added product-vision framing: Cadence is one evolving product; current scope is **Milestone 1 (M1)**. Recorded the knowledge-graph platform as **future milestones M2–M6 + cross-cutting** (§10) — a real future build, milestone-level detail, both member & coach personas. Added coach persona (§2), three forward-compatibility seam intents for the architecture stage (§7.7, behavior-neutral, no M1 scope change), and over-engineering/churn risks (§8.8–8.9). No change to M1's §4 tiers or §§5–6 requirements/criteria. | User + PM |
+| 2026-06-02 | **Architecture v2 — scope changes from the architecture stage** (decisions recorded as ADR-001…019, see `docs/ARCHITECTURE.md`). Promoted from Deferred into M1: **streaming responses → P0** (req 11a, ADR-002, safe-pattern SSE) and **durable dual-path Postgres/SQLite persistence** (req 11b, ADR-011, supersedes the "session-local store" framing). Committed three **stretch features** (reqs 16–18): tiny model-eval harness, visible "why these?" explanation panel, coach voice/personality polish (ADR-019). Multi-user/per-member persistence remains deferred to M6. No change to the routing/agent/resilience core (§§5–6 reqs 1–15 / criteria 1–23). | User + PM |
