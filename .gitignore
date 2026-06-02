@@ -1,1 +1,23 @@
 .env
+
+# Transient build worktrees (autonomous agents)
+.claude/worktrees/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Local DB (SqliteLogRepository default path)
+*.db
+*.sqlite
+*.sqlite3
