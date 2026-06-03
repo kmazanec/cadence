@@ -9,11 +9,15 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Load .env before any model config reads env vars.
+# Load .env before any model config reads env vars. The file lives at the repo
+# root (two levels above this file's ``backend/`` dir), so resolve it explicitly
+# rather than relying on the current working directory.
 try:
+    from pathlib import Path
+
     from dotenv import load_dotenv
 
-    load_dotenv()
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 except ImportError:
     pass  # python-dotenv is optional; env vars may be set by the shell/container
 
