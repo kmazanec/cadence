@@ -21,7 +21,7 @@ from langgraph.graph import END, StateGraph
 
 from ..graph.explanation import Reason
 from ..graph.routing import Route, RoutingDecision, decide_route
-from ..graph.state import CoachResult, HubState
+from ..graph.state import CoachResult, GeneratorResult, HubState
 from ..models.factory import get_model
 
 
@@ -78,14 +78,13 @@ async def _router_node(state: HubState) -> dict:
 
 def _route_edge(
     state: HubState,
-) -> Literal["coach_boundary", "clarify", "response_assembly"]:
+) -> Literal["coach_boundary", "generator_boundary", "clarify", "response_assembly"]:
     """Select the next node based on committed route state."""
     route = state.get("route")
     if route is Route.COACH:
         return "coach_boundary"
     if route is Route.WORKOUT_GENERATE:
-        # Generator not yet wired — fall through to assembly.
-        return "response_assembly"
+        return "generator_boundary"
     if route is Route.WORKOUT_LOG:
         # Logger not yet wired — fall through to assembly.
         return "response_assembly"
@@ -136,7 +135,87 @@ async def _coach_boundary_node(state: HubState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Placeholder nodes for non-coach routes and clarification
+# Generator boundary adapter node
+# ---------------------------------------------------------------------------
+
+
+async def _generator_boundary_node(state: HubState) -> dict:
+    """Translate hub state into generator subgraph input, invoke the subgraph,
+    and map the workout back onto HubState.subgraph_result.
+
+    Also builds Reason triples for the exercises included in the workout, using
+    the closed relation vocabulary (matches_target and equipment_match).
+    """
+    from ..agents.generator.graph import build_generator_subgraph
+    from ..data.json_repository import JsonExerciseRepository
+
+    repo = JsonExerciseRepository()
+    generator = build_generator_subgraph(repo=repo)
+
+    generator_input = {
+        "user_message": state["user_message"],
+        "injuries": [],
+        "targets": [],
+        "workout": None,
+        "selected_exercise_ids": [],
+        "retry_count": 0,
+    }
+
+    gen_output = await generator.ainvoke(generator_input)
+    workout = gen_output.get("workout")
+    selected_ids: list[str] = gen_output.get("selected_exercise_ids") or []
+
+    # Build relation-shaped Reasons for the exercises included in the workout.
+    reasons: list[Reason] = []
+    if workout is not None:
+        for block in workout.blocks:
+            for p in block.exercises:
+                ex = repo.get_by_id(p.exercise_id)
+                if ex is None:
+                    continue
+                # Emit one reason per muscle group targeted.
+                for mg in ex.muscle_groups:
+                    reasons.append(
+                        Reason(
+                            claim="included",
+                            subject=ex.name,
+                            relation="matches_target",
+                            object=mg,
+                        )
+                    )
+                # Emit one reason per required equipment item.
+                for eq in ex.equipment_required:
+                    reasons.append(
+                        Reason(
+                            claim="included",
+                            subject=ex.name,
+                            relation="equipment_match",
+                            object=eq,
+                        )
+                    )
+
+    if workout is None:
+        # Generator exhausted retries — graceful empty result.
+        result = None
+        reply_ai_msg = AIMessage(
+            content="I wasn't able to build a workout for that request. "
+            "Try widening the equipment or muscle group selection."
+        )
+        return {
+            "subgraph_result": result,
+            "explanation": reasons,
+            "messages": [reply_ai_msg],
+        }
+
+    result = GeneratorResult(workout=workout, selected_exercise_ids=selected_ids)
+    return {
+        "subgraph_result": result,
+        "explanation": reasons,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Placeholder nodes for non-generator routes and clarification
 # ---------------------------------------------------------------------------
 
 
@@ -181,6 +260,7 @@ def build_hub() -> StateGraph:
     # The coach boundary node handles hub↔subgraph translation and is the
     # unique node name that prevents MULTIPLE_SUBGRAPHS conflicts.
     builder.add_node("coach_boundary", _coach_boundary_node)
+    builder.add_node("generator_boundary", _generator_boundary_node)
     builder.add_node("clarify", _clarify_node)
     builder.add_node("response_assembly", _response_assembly_node)
 
@@ -192,12 +272,14 @@ def build_hub() -> StateGraph:
         _route_edge,
         {
             "coach_boundary": "coach_boundary",
+            "generator_boundary": "generator_boundary",
             "clarify": "clarify",
             "response_assembly": "response_assembly",
         },
     )
 
     builder.add_edge("coach_boundary", "response_assembly")
+    builder.add_edge("generator_boundary", "response_assembly")
     builder.add_edge("clarify", "response_assembly")
     builder.add_edge("response_assembly", END)
 
