@@ -20,6 +20,8 @@ from app.data.json_repository import JsonExerciseRepository
 from app.data.log_repository import LogEntry, LogRepository, get_log_repository
 from app.data.repository import ExerciseRepository
 from app.graph.state import WorkoutLogResult
+from app.models.config import MODEL_CONFIG
+from app.observability import logging as obs
 
 from .resolver import resolve_exercise_name
 from .state import LoggerState
@@ -64,12 +66,13 @@ async def _extract_entries(user_message: str, model: Any) -> list[ParsedEntry]:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     structured = model.with_structured_output(ParsedEntries)
-    result: ParsedEntries = await structured.ainvoke(
-        [
-            SystemMessage(content=_EXTRACTION_SYSTEM_PROMPT),
-            HumanMessage(content=user_message),
-        ]
-    )
+    with obs.llm_call("logger", MODEL_CONFIG["logger"]):
+        result: ParsedEntries = await structured.ainvoke(
+            [
+                SystemMessage(content=_EXTRACTION_SYSTEM_PROMPT),
+                HumanMessage(content=user_message),
+            ]
+        )
     return result.entries
 
 

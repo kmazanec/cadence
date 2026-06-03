@@ -12,6 +12,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
 
 import app.models.factory as _factory
+from app.models.config import MODEL_CONFIG
+from app.observability import logging as obs
 from .state import CoachState
 
 # Voice guidelines from BRAND.md: conversational, confident, partnership-
@@ -35,7 +37,8 @@ async def _answer_node(state: CoachState) -> dict:
         *state.get("messages", []),
         HumanMessage(content=state["user_message"]),
     ]
-    response = await model.ainvoke(messages)
+    with obs.llm_call("coach", MODEL_CONFIG["coach"]):
+        response = await model.ainvoke(messages)
     return {"answer": response.content}
 
 

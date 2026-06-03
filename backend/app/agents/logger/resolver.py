@@ -35,7 +35,7 @@ _DECLINED: object = object()
 def _build_name_corpus(
     repo: ExerciseRepository,
 ) -> dict[str, Exercise]:
-    """Return a mapping of lowercase name → Exercise for the full catalogue."""
+    """Return a mapping of lowercase name -> Exercise for the full catalogue."""
     return {ex.name.casefold(): ex for ex in repo.all()}
 
 
@@ -54,9 +54,9 @@ def resolve_exercise_name(
     invented exercise.
 
     LLM verify tri-state:
-    - Returns a name string  → model selected a candidate; use it.
-    - Returns ``_DECLINED``  → model was reached but chose pick==0; return None.
-    - Returns ``None``       → LLM call failed; fall back to fuzzy top result.
+    - Returns a name string  -> model selected a candidate; use it.
+    - Returns ``_DECLINED``  -> model was reached but chose pick==0; return None.
+    - Returns ``None``       -> LLM call failed; fall back to fuzzy top result.
     """
     if not raw_name or not raw_name.strip():
         return None
@@ -111,6 +111,9 @@ def _llm_verify(
     from langchain_core.messages import HumanMessage, SystemMessage
     from pydantic import BaseModel
 
+    from app.models.config import MODEL_CONFIG
+    from app.observability import logging as obs
+
     shortlist = [name for name, _score, _idx in candidates]
     numbered = "\n".join(f"{i+1}. {name}" for i, name in enumerate(shortlist))
 
@@ -134,9 +137,10 @@ def _llm_verify(
             pick: int
 
         structured = model.with_structured_output(_Pick)
-        result: _Pick = structured.invoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
-        )
+        with obs.llm_call("logger", MODEL_CONFIG["logger"]):
+            result: _Pick = structured.invoke(
+                [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+            )
         pick = result.pick
         if pick == 0:
             # Model explicitly indicated no candidate is a good match.

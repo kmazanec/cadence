@@ -24,7 +24,9 @@ from ..data.json_repository import JsonExerciseRepository
 from ..graph.explanation import Reason
 from ..graph.routing import Route, RoutingDecision, decide_route
 from ..graph.state import CoachResult, GeneratorResult, HubState, WorkoutLogResult
+from ..models.config import MODEL_CONFIG
 from ..models.factory import get_model
+from ..observability import logging as obs
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +68,8 @@ async def _router_node(state: HubState) -> dict:
     # existing dispatch tests are unaffected.
     prior_messages = list(state.get("messages", []))
     router_input = prior_messages + [HumanMessage(content=state["user_message"])]
-    raw_result: dict = await structured.ainvoke(router_input)
+    with obs.llm_call("router", MODEL_CONFIG["router"]):
+        raw_result: dict = await structured.ainvoke(router_input)
 
     parsed: RoutingDecision | None = raw_result.get("parsed")
     raw_msg = raw_result.get("raw")
@@ -83,6 +86,9 @@ async def _router_node(state: HubState) -> dict:
     route, clarification = decide_route(parsed)
 
     routing_confidence: float | None = parsed.confidence if parsed is not None else None
+
+    # Emit the committed route so any operator can reconstruct the decision path.
+    obs.log_route(route, routing_confidence)
 
     result: dict = {
         "route": route,
@@ -402,7 +408,7 @@ def build_hub() -> StateGraph:
     builder = StateGraph(HubState)
 
     builder.add_node("router", _router_node)
-    # The boundary nodes handle hub↔subgraph translation and have unique node
+    # The boundary nodes handle hub<->subgraph translation and have unique node
     # names that prevent MULTIPLE_SUBGRAPHS conflicts.
     builder.add_node("coach_boundary", _coach_boundary_node)
     builder.add_node("generator_boundary", _generator_boundary_node)

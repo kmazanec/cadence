@@ -37,6 +37,8 @@ from app.agents.generator.tools import (
     search_exercises_tool,
 )
 from app.data.repository import ExerciseRepository
+from app.models.config import MODEL_CONFIG
+from app.observability import logging as obs
 
 # ---------------------------------------------------------------------------
 # System prompt
@@ -178,7 +180,8 @@ def _make_generate_node(repo: ExerciseRepository):
         selected_ids: list[str] = []
 
         for _ in range(_TOOL_LOOP_MAX):
-            response = await bound_model.ainvoke(messages)
+            with obs.llm_call("generator", MODEL_CONFIG["generator"]):
+                response = await bound_model.ainvoke(messages)
             messages.append(response)
 
             tool_calls = getattr(response, "tool_calls", None) or []
@@ -195,18 +198,29 @@ def _make_generate_node(repo: ExerciseRepository):
                     # Pass injuries so contraindicated candidates are dropped
                     # before the model ever sees them (hard pre-filter layer).
                     result_str = _execute_search(args, repo, injuries=injuries)
+                    # Classify outcome as error when the result JSON contains an
+                    # error key, otherwise record as ok.
+                    try:
+                        parsed_result = json.loads(result_str)
+                        outcome = "error" if isinstance(parsed_result, dict) and "error" in parsed_result else "ok"
+                    except Exception:
+                        outcome = "ok"
+                    obs.tool_call("search_exercises", outcome)
                     messages.append(_tool_message(call_id, result_str))
 
                 elif name == "build_workout":
                     # Pass injuries so bilateral auto-pairing can skip
                     # contraindicated partners.
                     payload, msg, ids = _execute_build_workout(args, repo, injuries=injuries)
+                    outcome = "ok" if payload is not None else "error"
+                    obs.tool_call("build_workout", outcome)
                     if payload is not None:
                         assembled_payload = payload
                         selected_ids = ids
                     messages.append(_tool_message(call_id, msg))
 
                 else:
+                    obs.tool_call(name, "error")
                     messages.append(_tool_message(call_id, f"Unknown tool: {name!r}"))
 
             if assembled_payload is not None:
@@ -237,6 +251,7 @@ def _make_gate_node(repo: ExerciseRepository):
 
         if payload is None:
             retry = (state.get("retry_count") or 0) + 1
+            obs.retry()
             return {"retry_count": retry}
 
         injuries: list[str] = state.get("injuries") or []
@@ -246,6 +261,7 @@ def _make_gate_node(repo: ExerciseRepository):
 
         # Gate failed: clear workout and increment retry.
         retry = (state.get("retry_count") or 0) + 1
+        obs.retry()
         return {"workout": None, "retry_count": retry}
 
     return _gate_node

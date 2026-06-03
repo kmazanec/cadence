@@ -1,6 +1,6 @@
 # Feature: Observability — structured tracing (P2)
 
-**ID:** F-09 · **Iteration:** 03-p2-memory-observability · **Status:** Not started
+**ID:** F-09 · **Iteration:** 03-p2-memory-observability · **Status:** Complete
 
 ## What this delivers (before → after)
 **Before:** A request's internal path (route, model calls, tool calls) is opaque.
@@ -44,6 +44,32 @@ deps on those features' behavior.)
 - Optional: a tracing-vendor key to demo the vendor path (not required to run/test).
 
 ## Implementation notes (filled in by the building agent)
+
+**Instrumentation approach:** Opted for call-site context managers (`with obs.llm_call(role, model)`)
+rather than a proxy object wrapping `BaseChatModel`. The proxy approach is fragile because
+`with_structured_output` and `bind_tools` return new Runnable chains, so a naive proxy wrapping only
+`ainvoke` would miss those paths. Call-site timing is simpler, more explicit, and keeps the factory
+seam untouched — the test monkeypatch of `get_model` continues to work unchanged.
+
+**Correlation via ContextVar:** `session_id` is set once in `_stream_chat` at the request boundary
+and read by all downstream emitters through a `contextvars.ContextVar`. This propagates through
+`await` boundaries without threading the value through node signatures. The ContextVar is reset in a
+`finally` block to prevent bleed into other async tasks. Subgraph tests that do not set the ContextVar
+see the default empty string, which is correct.
+
+**Redaction:** `redact()` reads `os.environ[API_KEY_ENV]` at emit time, not at import time. This
+means a monkeypatched sentinel in tests is always picked up, and an unset key is always a no-op —
+no module-level caching that could capture a stale value.
+
+**Retry events:** Emitted from inside `_gate_node` each time `retry_count` is incremented, so retry
+counts are reconstructable by counting `retry` events in the log without threading an aggregate out of
+the isolated generator subgraph.
+
+**Vendor tracer:** `enable_vendor_tracer()` is a single call in `create_app()`. It returns `False`
+unless a LangSmith/LangChain key is present and the optional `langsmith` package is installed. No
+bespoke client code — LangChain reads the key from the environment and auto-traces. The lazy import
+inside `try/except ImportError` ensures the app starts cleanly when `langsmith` is not explicitly
+installed.
 
 <!-- BUILD-PLAN:kmaz-plan-iteration -->
 
@@ -102,31 +128,31 @@ F-09 is greenfield structured-logging instrumentation woven around three existin
 
 ### Build steps (checkbox)
 
-- [ ] **1.** Create the instrumentation module: a stdlib-logging structured JSON emitter with a request-scoped correlation ContextVar and a redaction helper. Define event emitters: log_route(route, confidence), an llm_call timing context manager (role, model, latency_ms, optional usage), a tool_call emitter (name, outcome|error), a retry emitter, and a request-latency context manager. JSON-serialize each event via json.dumps over a dict that always carries session_id (from the ContextVar, default 'unknown') and event type. redact(text) scrubs any occurrence of os.environ[API_KEY_ENV] (when set) replacing with '***REDACTED***'.
+- [x] **1.** Create the instrumentation module: a stdlib-logging structured JSON emitter with a request-scoped correlation ContextVar and a redaction helper. Define event emitters: log_route(route, confidence), an llm_call timing context manager (role, model, latency_ms, optional usage), a tool_call emitter (name, outcome|error), a retry emitter, and a request-latency context manager. JSON-serialize each event via json.dumps over a dict that always carries session_id (from the ContextVar, default 'unknown') and event type. redact(text) scrubs any occurrence of os.environ[API_KEY_ENV] (when set) replacing with '***REDACTED***'.
   - Files: `backend/app/observability/__init__.py`, `backend/app/observability/logging.py`
   - Verify: Unit test test_redact_scrubs_api_key asserts redact(f'key={SECRET}') == 'key=***REDACTED***' when OPENROUTER_API_KEY=SECRET; test_event_is_json asserts emitted record is valid JSON with required keys (event,session_id).
-- [ ] **2.** Write the redaction + event-shape unit tests FIRST (test-first) and confirm they fail before implementing, then make them pass with step 1.
+- [x] **2.** Write the redaction + event-shape unit tests FIRST (test-first) and confirm they fail before implementing, then make them pass with step 1.
   - Files: `backend/tests/unit/test_observability_logging.py`
   - Verify: uv run pytest tests/unit/test_observability_logging.py — test_redact_scrubs_api_key, test_redact_noop_when_key_unset, test_event_is_valid_json all pass.
-- [ ] **3.** Set the correlation ContextVar in the request boundary: in _stream_chat (api/chat.py) set the session_id contextvar at the top, wrap the whole stream in the request-latency context manager, and emit nothing that leaks the key. Reset/restore the contextvar in a finally.
+- [x] **3.** Set the correlation ContextVar in the request boundary: in _stream_chat (api/chat.py) set the session_id contextvar at the top, wrap the whole stream in the request-latency context manager, and emit nothing that leaks the key. Reset/restore the contextvar in a finally.
   - Files: `backend/app/api/chat.py`
   - Verify: Integration test asserts a request emits a request-level event carrying the session_id and a total_latency_ms field.
-- [ ] **4.** Instrument the router: in _router_node (graph/hub.py) wrap the structured-output ainvoke in the llm_call context manager with role='router' and model=MODEL_CONFIG['router'], and call log_route(route, routing_confidence) after decide_route. Read session via contextvar (already set at boundary).
+- [x] **4.** Instrument the router: in _router_node (graph/hub.py) wrap the structured-output ainvoke in the llm_call context manager with role='router' and model=MODEL_CONFIG['router'], and call log_route(route, routing_confidence) after decide_route. Read session via contextvar (already set at boundary).
   - Files: `backend/app/graph/hub.py`
   - Verify: Integration test asserts captured logs contain a 'route' event with the committed route and an 'llm_call' event with role='router'.
-- [ ] **5.** Instrument the coach and logger LLM call sites: wrap _answer_node's model.ainvoke (coach/graph.py) and the logger model calls (logger/graph.py:99, resolver.py:131) in the llm_call context manager with the matching role/model. Best-effort capture usage_metadata only if present.
+- [x] **5.** Instrument the coach and logger LLM call sites: wrap _answer_node's model.ainvoke (coach/graph.py) and the logger model calls (logger/graph.py:99, resolver.py:131) in the llm_call context manager with the matching role/model. Best-effort capture usage_metadata only if present.
   - Files: `backend/app/agents/coach/graph.py`, `backend/app/agents/logger/graph.py`, `backend/app/agents/logger/resolver.py`
   - Verify: Coach-route integration test shows an llm_call event role='coach'; existing coach/logger tests still pass (uv run pytest tests/graph tests/test_hub_logger_wiring.py).
-- [ ] **6.** Instrument generator LLM + tool calls + retries: in _make_generate_node wrap each bound_model.ainvoke in llm_call(role='generator'); emit a tool_call event at each dispatch in the tool_calls loop (name=search_exercises/build_workout, outcome=ok|error derived from the result), redacting args summaries. In _make_gate_node emit a retry event when retry_count increments.
+- [x] **6.** Instrument generator LLM + tool calls + retries: in _make_generate_node wrap each bound_model.ainvoke in llm_call(role='generator'); emit a tool_call event at each dispatch in the tool_calls loop (name=search_exercises/build_workout, outcome=ok|error derived from the result), redacting args summaries. In _make_gate_node emit a retry event when retry_count increments.
   - Files: `backend/app/agents/generator/graph.py`
   - Verify: Generator integration test asserts >=1 tool_call event with name and outcome; a forced-retry test asserts a retry event is emitted.
-- [ ] **7.** Add the optional env-gated vendor tracer: an enable_vendor_tracer() helper called once at app startup (main.py create_app) that, only when LANGSMITH_API_KEY (or LANGCHAIN_API_KEY) is present, lazily imports langsmith inside try/except ImportError and enables LangChain native tracing; otherwise no-ops. Never required to run.
+- [x] **7.** Add the optional env-gated vendor tracer: an enable_vendor_tracer() helper called once at app startup (main.py create_app) that, only when LANGSMITH_API_KEY (or LANGCHAIN_API_KEY) is present, lazily imports langsmith inside try/except ImportError and enables LangChain native tracing; otherwise no-ops. Never required to run.
   - Files: `backend/app/observability/tracer.py`, `backend/app/main.py`
   - Verify: test_vendor_tracer_noop_without_key asserts enable_vendor_tracer() returns False/None and does not raise when no key set; app import + full suite run with key absent.
-- [ ] **8.** Write the critical-path integration test: drive a /chat request (via the fake_get_model seam) with OPENROUTER_API_KEY set to a sentinel, capture structured logs (caplog or a list handler), and assert the captured stream contains the route taken + at least one llm_call OR tool_call event with an outcome, AND the sentinel secret value never appears in any captured record.
+- [x] **8.** Write the critical-path integration test: drive a /chat request (via the fake_get_model seam) with OPENROUTER_API_KEY set to a sentinel, capture structured logs (caplog or a list handler), and assert the captured stream contains the route taken + at least one llm_call OR tool_call event with an outcome, AND the sentinel secret value never appears in any captured record.
   - Files: `backend/tests/integration/test_observability_request.py`
   - Verify: uv run pytest tests/integration/test_observability_request.py::test_request_log_reconstructable_and_redacted passes (this is the F-09 acceptance test).
-- [ ] **9.** Run the full backend suite to confirm the schema-aware fake-model seam and all iteration-01/02 tests still pass with instrumentation in place.
+- [x] **9.** Run the full backend suite to confirm the schema-aware fake-model seam and all iteration-01/02 tests still pass with instrumentation in place.
   - Files: `backend/tests/conftest.py`
   - Verify: uv run pytest — full suite green; specifically tests/graph/test_hub_dispatch.py and test_router_node.py (the seam-sensitive router dispatch tests) pass unchanged.
 

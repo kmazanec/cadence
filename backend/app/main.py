@@ -27,7 +27,7 @@ def create_app() -> FastAPI:
     # Fail fast: refuse to start if a structured-output role is misconfigured.
     validate_model_config()
 
-    # Turn on vendor tracing when its key is present; a no-op otherwise.
+    # Enable the optional vendor tracer when its key is present; no-op otherwise.
     enable_vendor_tracer()
 
     app = FastAPI(title="Cadence", version="0.1.0")
