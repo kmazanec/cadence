@@ -118,14 +118,22 @@ def _llm_verify(
     numbered = "\n".join(f"{i+1}. {name}" for i, name in enumerate(shortlist))
 
     system_prompt = (
-        "You are an exercise name resolver. "
-        "Given a user's typed exercise name and a numbered shortlist of "
-        "catalogue matches, reply with ONLY the number of the best match "
-        "(1-based). If none is a good match for the user's exercise, reply "
-        "with 0."
+        "You are an exercise name resolver for a workout logger. "
+        "Users type exercises casually and GENERICALLY — they say 'bench "
+        "press', 'squat', or 'curl', while the catalogue stores specific "
+        "variants like 'Barbell Decline Bench Press' or 'Dumbbell Neutral-Grip "
+        "Bench Press'. Your job is to map the user's generic name to the "
+        "closest catalogue variant of the SAME movement.\n"
+        "Given the user's typed name and a numbered shortlist, reply with ONLY "
+        "the number (1-based) of the best match. Treat a generic name as a "
+        "match for any catalogue entry of that movement — e.g. 'bench press' "
+        "matches 'Barbell Decline Bench Press'. Prefer the most standard, "
+        "least-qualified variant when several fit. "
+        "Reply 0 ONLY when no shortlist item is the same movement at all "
+        "(e.g. the user said 'bench press' but every option is a leg exercise)."
     )
     user_prompt = (
-        f"User typed: \"{raw_name}\"\n\n"
+        f'User typed: "{raw_name}"\n\n'
         f"Shortlist:\n{numbered}\n\n"
         "Reply with the number only."
     )
