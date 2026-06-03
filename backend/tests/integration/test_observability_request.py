@@ -74,6 +74,9 @@ async def test_request_log_reconstructable_and_redacted(
         with caplog.at_level(logging.INFO, logger="cadence.events"):
             with obs.request_latency():
                 await hub.ainvoke(_initial_state(session_id), config)
+                # Emit a tool_call whose outcome contains the sentinel so that
+                # redaction is exercised end-to-end within this request scope.
+                obs.tool_call(name="debug", outcome=sentinel)
     finally:
         obs.session_id.reset(sid_token)
 
@@ -108,11 +111,17 @@ async def test_request_log_reconstructable_and_redacted(
     assert latency_events, f"No 'request_latency' event found; events: {[e['event'] for e in events]}"
     assert latency_events[0]["latency_ms"] >= 0
 
-    # 4. The sentinel secret must never appear in any captured record.
+    # 4. Redaction: the sentinel must be absent from every record AND replaced by
+    # the marker in the tool_call event emitted above — so this assertion fails
+    # if redact() is removed or broken (not just if the secret passively never appeared).
     all_text = " ".join(r.message for r in caplog.records if r.name == "cadence.events")
     assert sentinel not in all_text, (
         f"Sentinel secret leaked into structured logs — redaction is broken.\n"
         f"Leaked text contains: {sentinel}"
+    )
+    assert "***REDACTED***" in all_text, (
+        "Expected at least one '***REDACTED***' marker in structured logs — "
+        "the tool_call event carrying the sentinel was not redacted (or not emitted)."
     )
 
 
