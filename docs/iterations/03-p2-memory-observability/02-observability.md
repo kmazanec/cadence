@@ -73,6 +73,18 @@ installed.
 
 <!-- BUILD-PLAN:kmaz-plan-iteration -->
 
+### Build outcome
+
+**Shippable:** yes
+
+**Acceptance status:** PRD criteria met. Structured route/llm_call(role+latency_ms)/request_latency(total_latency_ms) events reconstruct the call path and the configured API key is redacted from every record — verified by `test_request_log_reconstructable_and_redacted` and `test_secret_never_appears_in_json_events`. Live smoke confirmed no sk- key leaked to the server console. Vendor tracer no-ops without its key (`test_vendor_tracer_noop_without_key`). Note: structured obs events route through the obs logger, not the uvicorn console handler at default level — a logging-config detail, not a feature gap; emission is authoritatively verified in-suite.
+
+**Unresolved gating:** none.
+
+**Deferred:** none.
+
+**QA evidence:** `test_observability_request.py + test_observability_logging.py + test_observability_tracer.py: 18 passed including test_request_log_reconstructable_and_redacted`
+
 ## Build plan (kmaz-plan-iteration) — F-09
 
 **Model tier:** `sonnet`

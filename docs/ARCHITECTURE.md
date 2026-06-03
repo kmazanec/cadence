@@ -205,6 +205,22 @@ All reflected back into the PRD (v2). Built after P0+P1 core; cut before any cor
   over-engineering the PRD §8.8 forbids.
 - **No horizontal scale / concurrency machinery** — single-instance for M1 (ADR-016).
 
+## Integration lessons
+
+### Hub `_router_node` is a convergence hotspot (iteration 03, P2)
+
+The hub `_router_node` is where conversation context (multi-turn input assembly) and call-site
+instrumentation (tracing wrapper) both touch the same few lines. When two features land in one
+iteration that each edit this code path — one building the multi-turn message list, one wrapping the
+model call in an `obs.llm_call` context — the integrator must **combine** both behaviors (build the
+multi-turn input *inside* the obs context manager), never pick a side. A side-pick passes both
+features' scoped tests yet silently drops one concern at the integration boundary.
+
+**Mitigation:** Consider making the router input-assembly and the tracing wrapper structurally
+separable — e.g. extract `_build_router_input(state)` and `_timed_router_invoke(input)` as
+distinct helpers — so future edits to either concern don't require touching the same lines. This
+makes the integration merge mechanical rather than semantic.
+
 ## Open questions
 
 - **Exact Future accent hex** is unconfirmed (not exposed in site HTML) — a build-stage eyedropper

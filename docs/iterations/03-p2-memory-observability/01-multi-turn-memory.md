@@ -65,6 +65,18 @@ None.
 
 <!-- BUILD-PLAN:kmaz-plan-iteration -->
 
+### Build outcome
+
+**Shippable:** yes
+
+**Acceptance status:** PRD criteria 1-3 observably met. Criterion 1 (adjust vs prior) and 2 (clarify-answer resolves) confirmed by live two-turn smoke (turn 2 'make it shorter' routed workout_generate with no clarification) + tests `test_make_it_shorter_generator_sees_prior_workout` and `test_router_sees_prior_messages_on_clarify_answer`. Criterion 3 (no accumulator doubling) by `test_no_turn_duplication_on_reinvocation`. Session isolation by `test_sessions_remain_isolated`, matching the live fresh-session control.
+
+**Unresolved gating:** none.
+
+**Deferred:** msgpack `'Deserializing unregistered type ... will be blocked in a future version'` warning when round-tripping complex state through the checkpointer — non-fatal now, requires type registration or serialisation switch before a future langgraph strict-msgpack mode lands.
+
+**QA evidence:** `test_session_memory.py: 7 passed including test_make_it_shorter_generator_sees_prior_workout and test_sessions_remain_isolated`
+
 ## Build plan (kmaz-plan-iteration) — F-08
 
 **Model tier:** `sonnet`
