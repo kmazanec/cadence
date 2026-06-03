@@ -8,6 +8,7 @@ from ADR-002 that avoids tool-argument corruption.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import AsyncIterator
 
@@ -26,6 +27,8 @@ from ..api.streaming import (
 from ..graph.hub import build_hub
 from ..graph.state import HubState
 from .schemas import ChatRequest
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -105,10 +108,15 @@ async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
 
         yield encode_sse(DoneEvent())
 
-    except Exception as exc:  # noqa: BLE001
-        # Emit a sanitized error — no traceback, no internal detail.
+    except Exception:  # noqa: BLE001
+        # Log the full exception server-side for debugging, then emit a
+        # sanitized error frame to the client — no traceback, no internal
+        # detail. We deliberately do NOT re-raise: re-raising inside the
+        # StreamingResponse generator makes Starlette discard the just-yielded
+        # frame, so the client would receive an empty body instead of the
+        # error event this boundary promises (ADR-006/014).
+        logger.exception("Unhandled error in /chat stream")
         yield encode_sse(ErrorEvent(message="Something went wrong — please try again."))
-        raise
 
 
 @router.post("/chat")
