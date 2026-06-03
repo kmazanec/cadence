@@ -101,8 +101,13 @@ def _execute_search(
 def _execute_build_workout(
     args: dict,
     repo: ExerciseRepository,
+    injuries: list[str] | None = None,
 ) -> tuple[WorkoutPayload | None, str, list[str]]:
-    """Execute build_workout and return (payload, message, selected_ids)."""
+    """Execute build_workout and return (payload, message, selected_ids).
+
+    When *injuries* is supplied, bilateral auto-pairing in build_workout will
+    skip any partner that is contraindicated.
+    """
     try:
         params = BuildWorkoutInput.model_validate(args)
     except Exception as exc:
@@ -118,6 +123,7 @@ def _execute_build_workout(
             cooldown_ids=list(params.cooldown_ids),
             repo=repo,
             prescriptions=prescriptions,
+            injuries=injuries,
         )
     except ValueError as exc:
         return None, str(exc), []
@@ -140,6 +146,10 @@ def _make_generate_node(repo: ExerciseRepository):
 
     async def _generate_node(state: GeneratorState) -> dict:
         model = _factory.get_model("generator")
+
+        # Pull the active injuries from state so both the search pre-filter and
+        # the build assembly can apply the contraindication exclusion.
+        injuries: list[str] = state.get("injuries") or []
 
         # Bind tools so the model knows the available tool signatures.
         # Use the StructuredTool wrappers (not the bare Pydantic classes) so
@@ -176,11 +186,15 @@ def _make_generate_node(repo: ExerciseRepository):
                 call_id: str = tc.get("id", "unknown")
 
                 if name == "search_exercises":
-                    result_str = _execute_search(args, repo)
+                    # Pass injuries so contraindicated candidates are dropped
+                    # before the model ever sees them (hard pre-filter layer).
+                    result_str = _execute_search(args, repo, injuries=injuries)
                     messages.append(_tool_message(call_id, result_str))
 
                 elif name == "build_workout":
-                    payload, msg, ids = _execute_build_workout(args, repo)
+                    # Pass injuries so bilateral auto-pairing can skip
+                    # contraindicated partners.
+                    payload, msg, ids = _execute_build_workout(args, repo, injuries=injuries)
                     if payload is not None:
                         assembled_payload = payload
                         selected_ids = ids
@@ -205,7 +219,12 @@ def _make_generate_node(repo: ExerciseRepository):
 
 
 def _make_gate_node(repo: ExerciseRepository):
-    """Return an async output-gate node that validates the assembled workout."""
+    """Return an async output-gate node that validates the assembled workout.
+
+    Passes the active injuries into validate_workout so contraindicated exercises
+    are caught even if they slipped through the search pre-filter (defense-in-depth,
+    see ADR-009).
+    """
 
     async def _gate_node(state: GeneratorState) -> dict:
         payload: WorkoutPayload | None = state.get("workout")
@@ -214,7 +233,8 @@ def _make_gate_node(repo: ExerciseRepository):
             retry = (state.get("retry_count") or 0) + 1
             return {"retry_count": retry}
 
-        gate = validate_workout(payload, repo)
+        injuries: list[str] = state.get("injuries") or []
+        gate = validate_workout(payload, repo, injuries=injuries)
         if gate.valid:
             return {}
 
