@@ -19,6 +19,8 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
+from ..agents.generator.injury_extraction import extract_injuries
+from ..data.json_repository import JsonExerciseRepository
 from ..graph.explanation import Reason
 from ..graph.routing import Route, RoutingDecision, decide_route
 from ..graph.state import CoachResult, GeneratorResult, HubState, WorkoutLogResult
@@ -168,8 +170,6 @@ async def _generator_boundary_node(state: HubState) -> dict:
     the closed relation vocabulary (matches_target and equipment_match).
     """
     from ..agents.generator.graph import build_generator_subgraph
-    from ..agents.generator.injury_extraction import extract_injuries
-    from ..data.json_repository import JsonExerciseRepository
 
     repo = JsonExerciseRepository()
     generator = build_generator_subgraph(repo=repo)
@@ -187,7 +187,10 @@ async def _generator_boundary_node(state: HubState) -> dict:
 
     gen_output = await generator.ainvoke(generator_input)
     workout = gen_output.get("workout")
+    # selected_ids are the IDs the model passed to build_workout (before bilateral
+    # auto-pairing); the workout may contain additional auto-added pair members.
     selected_ids: list[str] = gen_output.get("selected_exercise_ids") or []
+    selected_id_set: set[str] = set(selected_ids)
 
     # Build relation-shaped Reasons for the exercises included in the workout.
     reasons: list[Reason] = []
@@ -197,6 +200,22 @@ async def _generator_boundary_node(state: HubState) -> dict:
                 ex = repo.get_by_id(p.exercise_id)
                 if ex is None:
                     continue
+
+                if p.exercise_id not in selected_id_set:
+                    # This exercise was not in the model's build_workout call —
+                    # it was auto-added by bilateral pairing. Find its source to
+                    # name the pairing relationship.
+                    source = repo.bilateral_pair(p.exercise_id)
+                    reasons.append(
+                        Reason(
+                            claim="added",
+                            subject=ex.name,
+                            relation="bilateral_pair_of",
+                            object=source.name if source is not None else ex.name,
+                        )
+                    )
+                    continue
+
                 # Emit one reason per muscle group targeted.
                 for mg in ex.muscle_groups:
                     reasons.append(
