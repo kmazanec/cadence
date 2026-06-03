@@ -6,11 +6,11 @@ validates the assembled workout through the output gate as a separate node.
 Flow:
   generate (tool loop internally) -> gate -> END or generate (on gate failure)
 
-The tool loop lives entirely inside the generate node because GeneratorState
-does not carry a messages field — conversation history is managed as a local
-variable within the node call rather than as graph-state. This is the correct
-design given the isolated-state contract: the hub owns the conversation thread
-and passes only a user_message string to the generator.
+The tool loop's own message history lives as a local variable within the
+generate node, not on GeneratorState. GeneratorState carries a read-only
+``messages`` key for prior conversation context the hub boundary supplies, but
+the generator never appends to it — the isolated-state contract keeps the hub as
+the single owner of the conversation thread.
 
 ADR-006: retries are bounded by state.retry_count < RETRY_CEILING; no RetryPolicy.
 ADR-002: the assembled workout is stored on state, never inferred from deltas.

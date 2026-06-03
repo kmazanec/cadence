@@ -19,12 +19,16 @@ except ImportError:
 
 from .api.chat import router as chat_router
 from .models.registry import validate_model_config
+from .observability.tracer import enable_vendor_tracer
 
 
 def create_app() -> FastAPI:
     """Build and configure the FastAPI application."""
     # Fail fast: refuse to start if a structured-output role is misconfigured.
     validate_model_config()
+
+    # Turn on vendor tracing when its key is present; a no-op otherwise.
+    enable_vendor_tracer()
 
     app = FastAPI(title="Cadence", version="0.1.0")
 
