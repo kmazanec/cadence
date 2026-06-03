@@ -7,12 +7,42 @@ are matched case-insensitively against the relevant list fields.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from .repository import Exercise
 
-# data/exercises.json sits at the repository root, two levels above ``backend/``.
-_DEFAULT_DATASET = Path(__file__).resolve().parents[3] / "data" / "exercises.json"
+# Env override: an explicit path always wins. docker-compose sets this so the
+# container never has to guess where the read-only ``/app/data`` volume mounts.
+_DATASET_ENV = "CADENCE_EXERCISES_PATH"
+
+
+def _discover_default_dataset() -> Path:
+    """Locate ``data/exercises.json`` by walking up from this file.
+
+    The dataset lives at the project root in ``data/exercises.json``, but how
+    many directories sit between this module and that root differs by layout:
+    locally it is ``backend/app/data/...`` (root is three parents up), while the
+    container's ``COPY . .`` flattens ``backend/`` away so it is ``app/data/...``
+    (root is one fewer). A fixed ``parents[N]`` hop is correct for exactly one of
+    those and silently wrong for the other. Walking up until we find the file is
+    correct for both — and for any future re-nesting.
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "data" / "exercises.json"
+        if candidate.is_file():
+            return candidate
+    # Fall back to the historical local layout so the error message names a
+    # concrete path rather than failing inside the loop.
+    return here.parents[3] / "data" / "exercises.json"
+
+
+def _default_dataset() -> Path:
+    override = os.environ.get(_DATASET_ENV)
+    if override:
+        return Path(override)
+    return _discover_default_dataset()
 
 
 def _normalize(values: list[str]) -> set[str]:
@@ -23,7 +53,7 @@ class JsonExerciseRepository:
     """In-memory repository backed by a JSON dataset file."""
 
     def __init__(self, dataset_path: Path | str | None = None) -> None:
-        path = Path(dataset_path) if dataset_path is not None else _DEFAULT_DATASET
+        path = Path(dataset_path) if dataset_path is not None else _default_dataset()
         raw = json.loads(path.read_text())
         self._exercises: list[Exercise] = [Exercise.model_validate(row) for row in raw]
         self._by_id: dict[str, Exercise] = {ex.id: ex for ex in self._exercises}

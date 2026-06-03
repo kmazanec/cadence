@@ -11,6 +11,8 @@ services:
       - ./.env
     environment:
       - CADENCE_DB_PATH=/app/var/cadence_log.db
+      # Explicit dataset path: the ./data volume mounts read-only here.
+      - CADENCE_EXERCISES_PATH=/app/data/exercises.json
     volumes:
       - ./data:/app/data:ro
       - cadence-db:/app/var
