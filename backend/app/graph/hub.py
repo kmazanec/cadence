@@ -19,6 +19,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
+from ..graph.explanation import Reason
 from ..graph.routing import Route, RoutingDecision, decide_route
 from ..graph.state import CoachResult, HubState
 from ..models.factory import get_model
@@ -118,9 +119,19 @@ async def _coach_boundary_node(state: HubState) -> dict:
 
     result = CoachResult(answer=answer)
     msg = AIMessage(content=answer)
+    # A single lightweight note signals that the coach handled this turn.
+    # Keeps explanation non-empty without manufacturing relation triples the
+    # coach didn't actually decide.
+    note = Reason(
+        claim="note",
+        subject="coach",
+        relation="name_match",
+        detail="answered by coach",
+    )
     return {
         "subgraph_result": result,
         "messages": [msg],
+        "explanation": [note],
     }
 
 
