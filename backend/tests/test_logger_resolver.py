@@ -2,14 +2,15 @@
 
 RapidFuzz WRatio(cutoff=80) resolves a known name to a real exercise id.
 An unmatchable name is flagged unmatched (no invented substitution).
-The LLM-verify path is toggled off for determinism.
+The LLM-verify path is toggled off for determinism in most tests; dedicated
+tests cover the tri-state LLM verify behaviour (declined vs failed).
 """
 
 from __future__ import annotations
 
 import pytest
 
-from app.agents.logger.resolver import resolve_exercise_name
+from app.agents.logger.resolver import _DECLINED, _llm_verify, resolve_exercise_name
 from app.data.json_repository import JsonExerciseRepository
 
 
@@ -59,3 +60,67 @@ def test_case_insensitive_match(repo) -> None:
     mixed = resolve_exercise_name("Bench Press", repo, llm_verify=False)
     # All three should produce the same result.
     assert lower == upper == mixed
+
+
+# ---------------------------------------------------------------------------
+# LLM verify tri-state tests
+# ---------------------------------------------------------------------------
+
+
+class _PickModel:
+    """Stub structured-output model for verify tests."""
+
+    def __init__(self, pick: int) -> None:
+        self._pick = pick
+
+    def with_structured_output(self, schema):  # noqa: ANN001
+        return self
+
+    def invoke(self, messages):  # noqa: ANN001
+        class _Result:
+            pass
+
+        r = _Result()
+        r.pick = self._pick  # type: ignore[attr-defined]
+        return r
+
+
+def test_llm_verify_decline_returns_none_not_fuzzy_top(repo, monkeypatch) -> None:
+    """When the model picks 0, resolve_exercise_name returns None (not the fuzzy top)."""
+    import app.models.factory as _factory
+
+    monkeypatch.setattr(_factory, "get_model", lambda role: _PickModel(0))
+    # "bench press" clears the fuzzy cutoff, so without the fix it would be returned.
+    result = resolve_exercise_name("bench press", repo, llm_verify=True)
+    assert result is None, (
+        "Model declined (pick=0) should cause resolve_exercise_name to return None, "
+        f"not fall through to the fuzzy top candidate; got: {result}"
+    )
+
+
+def test_llm_verify_failure_falls_back_to_fuzzy_top(repo, monkeypatch) -> None:
+    """When the LLM call raises an exception, the fuzzy top result is used."""
+    import app.models.factory as _factory
+
+    def _raising_model(role):  # noqa: ANN001
+        raise RuntimeError("network error")
+
+    monkeypatch.setattr(_factory, "get_model", _raising_model)
+    result = resolve_exercise_name("bench press", repo, llm_verify=True)
+    assert result is not None, (
+        "LLM call failure should fall back to the fuzzy top candidate, not return None"
+    )
+    exercise_id, exercise_name = result
+    assert "bench press" in exercise_name.lower()
+
+
+def test_llm_verify_selection_overrides_fuzzy_top(repo, monkeypatch) -> None:
+    """When the model picks a valid candidate, that candidate is returned."""
+    import app.models.factory as _factory
+
+    monkeypatch.setattr(_factory, "get_model", lambda role: _PickModel(1))
+    result = resolve_exercise_name("bench press", repo, llm_verify=True)
+    assert result is not None
+    exercise_id, exercise_name = result
+    assert isinstance(exercise_id, str)
+    assert isinstance(exercise_name, str)

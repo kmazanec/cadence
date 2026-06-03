@@ -26,6 +26,11 @@ _WRATIO_CUTOFF = 80
 # Number of shortlist candidates to pass to the LLM verify step.
 _SHORTLIST_SIZE = 5
 
+# Sentinel returned by _llm_verify when the model was successfully consulted
+# but explicitly chose pick==0 (no good match).  Distinct from None, which
+# means the LLM call failed and we should fall back to the fuzzy top result.
+_DECLINED: object = object()
+
 
 def _build_name_corpus(
     repo: ExerciseRepository,
@@ -44,8 +49,14 @@ def resolve_exercise_name(
 
     Performs a RapidFuzz WRatio scan over the full exercise catalogue. If
     ``llm_verify`` is True and a shortlist exists, the model picks the best
-    match. Returns ``None`` when no candidate clears the cutoff — guaranteeing
-    the caller never receives an invented exercise.
+    match. Returns ``None`` when no candidate clears the cutoff or when the
+    model explicitly declines — guaranteeing the caller never receives an
+    invented exercise.
+
+    LLM verify tri-state:
+    - Returns a name string  → model selected a candidate; use it.
+    - Returns ``_DECLINED``  → model was reached but chose pick==0; return None.
+    - Returns ``None``       → LLM call failed; fall back to fuzzy top result.
     """
     if not raw_name or not raw_name.strip():
         return None
@@ -68,12 +79,16 @@ def resolve_exercise_name(
     best_name, best_score, _ = candidates[0]
 
     if llm_verify and len(candidates) > 0:
-        # Ask the model to confirm the best candidate from the shortlist.
-        # If the model cannot confirm, fall back to the top fuzzy result.
         verified = _llm_verify(raw_name, candidates, corpus)
+        if verified is _DECLINED:
+            # Model was successfully consulted and explicitly rejected all
+            # candidates — honour that decision rather than accepting the
+            # fuzzy top match.
+            return None
         if verified is not None:
             ex = corpus[verified]
             return ex.id, ex.name
+        # verified is None: LLM call failed; fall through to fuzzy top result.
 
     ex = corpus[best_name]
     return ex.id, ex.name
@@ -83,11 +98,14 @@ def _llm_verify(
     raw_name: str,
     candidates: list[tuple[str, float, int]],
     corpus: dict[str, Exercise],
-) -> str | None:
+) -> object:
     """Ask the model to pick the best match from the shortlist.
 
-    Returns the lowercase exercise name from ``corpus`` that the model selects,
-    or ``None`` if the model declines or the call fails.
+    Returns:
+    - The lowercase exercise name from ``corpus`` that the model selected.
+    - ``_DECLINED`` sentinel when the model was reached and chose pick==0
+      (no good match among the shortlist).
+    - ``None`` when the LLM call raised an exception (best-effort fallback).
     """
     import app.models.factory as _factory
     from langchain_core.messages import HumanMessage, SystemMessage
@@ -120,8 +138,13 @@ def _llm_verify(
             [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
         )
         pick = result.pick
+        if pick == 0:
+            # Model explicitly indicated no candidate is a good match.
+            return _DECLINED
         if 1 <= pick <= len(shortlist):
             return shortlist[pick - 1]
+        # Out-of-range pick: treat as a failed/nonsensical response.
+        return None
     except Exception:
         # LLM verify is best-effort; fall through to fuzzy top result.
         pass
