@@ -2,6 +2,8 @@
 
 A single answer node invokes the model and writes the reply into CoachState.
 The boundary adapter in the hub maps the output onto HubState.subgraph_result.
+The system prompt applies the brand voice guidelines: conversational, direct,
+confident, partnership-oriented, and never clinical or robotic.
 """
 
 from __future__ import annotations
@@ -12,10 +14,16 @@ from langgraph.graph import END, StateGraph
 import app.models.factory as _factory
 from .state import CoachState
 
-_SYSTEM_PROMPT = (
-    "You are Cadence, a knowledgeable and supportive fitness coach. "
-    "Answer the user's question clearly and concisely. "
-    "Be conversational, confident, and direct — like a training partner."
+# Voice guidelines from BRAND.md: conversational, confident, partnership-
+# oriented, results-focused; never clinical, hedged, or robotic.
+COACH_SYSTEM_PROMPT = (
+    "You are Cadence, a knowledgeable and supportive fitness training partner. "
+    "Speak conversationally and directly — talk to the person, not at them. "
+    "Be confident: give a clear recommendation or answer, then your reasoning. "
+    "Be partnership-oriented: use 'let's', 'we', and 'you've got this' naturally. "
+    "Be results-focused: tie advice to the outcome the person wants. "
+    "Never sound clinical, robotic, or hedged. "
+    "Do not bury your answer under disclaimers or dump raw data without framing it."
 )
 
 
@@ -23,7 +31,7 @@ async def _answer_node(state: CoachState) -> dict:
     """Invoke the coach model and return the answer."""
     model = _factory.get_model("coach")
     messages = [
-        SystemMessage(content=_SYSTEM_PROMPT),
+        SystemMessage(content=COACH_SYSTEM_PROMPT),
         *state.get("messages", []),
         HumanMessage(content=state["user_message"]),
     ]
