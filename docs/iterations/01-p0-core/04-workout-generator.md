@@ -57,3 +57,37 @@ structured).
 None beyond F-01.
 
 ## Implementation notes (filled in by the building agent)
+
+### Equipment-satisfiability semantics
+
+The `search()` equipment filter was changed from intersection to subset semantics
+in `json_repository.py`. An exercise is returned only when every item in its
+`equipment_required` is in the caller's available-equipment set. An empty
+`required` set (bodyweight) satisfies any equipment argument. Passing
+`equipment=None` (not an empty list) still returns all exercises unfiltered —
+the distinction between "I have no equipment" (`[]`) and "don't filter" (`None`)
+is preserved in the API.
+
+### GeneratorState has no messages field
+
+The frozen `GeneratorState` contract carries no `messages` field. The generator
+subgraph handles the tool loop (search → build_workout) entirely inside the
+`generate` node using a local Python list. Conversation history is local to that
+invocation, not persisted to graph state. The hub owns the conversation thread
+via `HubState.messages`; the generator receives only `user_message: str` and
+returns a `workout` payload.
+
+### Output gate placement
+
+`validate_workout` runs as a separate `gate` node in the generator subgraph,
+executed after `build_workout` assembles the payload. On gate failure the
+workout is cleared from state and `retry_count` incremented; the conditional
+edge loops back to `generate` until `retry_count >= RETRY_CEILING`, then exits.
+
+### Criterion 4 (workout renders as a card, not raw JSON)
+
+The frontend `selectRender` dispatch already maps `workout_generate` →
+`"workout-card"`. The `StructuredEvent` payload carries the `WorkoutPayload`
+from state to the client. A full React `WorkoutCard` component is the UI
+deliverable of a later feature; this iteration delivers the type/dispatch
+machinery that ensures the route is correct.
