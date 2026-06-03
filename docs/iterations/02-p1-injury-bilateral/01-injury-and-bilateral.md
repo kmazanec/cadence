@@ -88,6 +88,18 @@ None.
 - **Full suite result:** 225 passed, 4 skipped (pre-existing skips, not related to this
   feature), 3 warnings (pre-existing). All new tests green.
 
+### Build outcome
+
+**Shippable:** yes
+
+**Acceptance status:** All 4 spec acceptance criteria met; PRD acceptance criteria 9 (knee hard exclusion) and 10 (bilateral pairing) observably satisfied via deterministic smoke. Reqs 11-12 traced.
+
+**Unresolved gating:** none.
+
+**Deferred:** none.
+
+**QA evidence:** "AC9 LAYER1 PASS: search pre-filter hides all knee-loading exercises" / "AC10 PASS: unilateral L1 auto-included its partner R1" (233 passed, 4 skipped)
+
 <!-- BUILD-PLAN:kmaz-plan-iteration -->
 
 ## Build plan (kmaz-plan-iteration) — F-07

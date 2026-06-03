@@ -34,6 +34,13 @@ filtering ([ADR-010](./adrs/ADR-010-fuzzy-matching-and-output-validation-gate.md
 [ADR-009](./adrs/ADR-009-injury-as-relationship-hard-exclusion.md)) — the same discipline that becomes
 M5's safety-critical contraindication.
 
+**Injury exclusion — two-layer contract (shipped in iteration 02, F-07):** injury hard-exclusion is
+a two-layer contract: the search pre-filter (`_execute_search` hides contraindicated exercises from
+the model) AND the output gate (`validate_workout` rejects/flags any that reach the payload).
+`build_workout`'s `injuries` param guards bilateral-partner inclusion only — it does not re-filter
+explicitly-supplied IDs. Future generator changes must preserve both layers; neither alone is the
+safety boundary.
+
 **Model layer:** OpenRouter via LangChain `ChatOpenAI` behind a `get_model(role)` factory with a static
 **capability registry** + fail-fast startup validation, per-role config
 ([ADR-007](./adrs/ADR-007-model-abstraction-openrouter-capability-registry.md)) — swap models by config,
