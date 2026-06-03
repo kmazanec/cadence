@@ -67,3 +67,17 @@ stubs + a thin live check.
   LLM.
 - **Policy:** each test file states its rationale (the brief grades the *why*), mirroring this ADR.
 - **Build order:** paths 1–2 are P0-critical and ship first; 3–4 follow; cut bottom-up.
+
+## Lesson from the 01-p0-core build (added at integration)
+
+The single `get_model(role)` fake seam serves **every** structured-output role (router,
+generator, logger). The first fake (written by F-02 for routing tests) returned a
+`RoutingDecision` from `with_structured_output(...)` regardless of the requested schema.
+That was invisible while WORKOUT_LOG fell through to a stub, but the moment F-05 wired the
+real logger into the hub, the logger's `with_structured_output(ParsedEntries)` call got a
+`RoutingDecision` back and read `.entries` off it — an `AttributeError` that only the *full
+integrated* run surfaced (each feature's scoped run passed). **Policy:** the fake-model seam
+MUST be schema-aware — `with_structured_output(schema)` returns an instance of `schema`, not a
+fixed type. A per-role fake that ignores its schema is a latent integration break that hides
+until two features share the seam. Any feature that adds a new structured-output call site must
+ensure the shared fake can satisfy that schema.
