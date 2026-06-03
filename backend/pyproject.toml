@@ -27,6 +27,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "live: tests that call a real LLM (skipped when OPENROUTER_API_KEY is absent)",
+]
 
 [tool.ruff]
 line-length = 100
