@@ -8,9 +8,6 @@ Tests inject a fake model via the get_model seam so no network is involved.
 from __future__ import annotations
 
 import pytest
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage
-from langchain_core.runnables import RunnableLambda
 
 from app.graph.routing import (
     ClarificationPrompt,
@@ -18,47 +15,6 @@ from app.graph.routing import (
     RoutingDecision,
 )
 from app.graph.state import HubState
-
-
-# ---------------------------------------------------------------------------
-# Fake model that supports with_structured_output(include_raw=True)
-# ---------------------------------------------------------------------------
-
-
-class FakeStructuredOutputModel(BaseChatModel):
-    """A network-free model whose with_structured_output returns a controlled result.
-
-    Pass ``parsed_result`` to inject a ``RoutingDecision`` (or None to
-    simulate a parse failure).
-    """
-
-    parsed_result: RoutingDecision | None
-    raw_content: str = "raw model output"
-
-    @property
-    def _llm_type(self) -> str:
-        return "fake-structured-output"
-
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        from langchain_core.outputs import ChatGeneration, ChatResult
-
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=self.raw_content))])
-
-    def with_structured_output(self, schema, *, include_raw: bool = False, **kwargs):
-        """Return a runnable that yields the controlled result dict."""
-        parsed = self.parsed_result
-        raw_msg = AIMessage(content=self.raw_content)
-
-        if include_raw:
-            result = {
-                "raw": raw_msg,
-                "parsed": parsed,
-                "parsing_error": None if parsed is not None else Exception("parse failed"),
-            }
-        else:
-            result = parsed
-
-        return RunnableLambda(lambda _: result)
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +37,15 @@ def _make_state(user_message: str = "test message") -> HubState:
     }
 
 
+def _fake(parsed_result: RoutingDecision | None = None, *, null_parse: bool = False):
+    """Return a FakeStructuredOutputModel from conftest for use in monkeypatching."""
+    from tests.conftest import FakeStructuredOutputModel
+
+    if null_parse:
+        return FakeStructuredOutputModel(simulate_null_parse=True)
+    return FakeStructuredOutputModel(parsed_result=parsed_result)
+
+
 # ---------------------------------------------------------------------------
 # Tests: high-confidence route populates state correctly
 # ---------------------------------------------------------------------------
@@ -96,17 +61,13 @@ async def test_router_node_populates_route_fields(
 ) -> None:
     """A high-confidence RoutingDecision is stored into route/routing_confidence/routing_raw."""
     decision = RoutingDecision(route=target_route, confidence=0.9, rationale="clear intent")
-    fake_model = FakeStructuredOutputModel(parsed_result=decision)
+    model = _fake(decision)
 
-    monkeypatch.setattr(
-        "app.graph.hub.get_model",
-        lambda role: fake_model,
-    )
+    monkeypatch.setattr("app.graph.hub.get_model", lambda role: model)
 
     from app.graph.hub import _router_node
 
-    state = _make_state()
-    result = await _router_node(state)
+    result = await _router_node(_make_state())
 
     assert result["route"] == target_route
     assert result["routing_confidence"] == pytest.approx(0.9)
@@ -120,9 +81,9 @@ async def test_router_node_stores_routing_raw_as_dict(
 ) -> None:
     """routing_raw is stored as a dict (the serialized raw structured-output capture)."""
     decision = RoutingDecision(route=Route.COACH, confidence=0.9, rationale="test")
-    fake_model = FakeStructuredOutputModel(parsed_result=decision)
+    model = _fake(decision)
 
-    monkeypatch.setattr("app.graph.hub.get_model", lambda role: fake_model)
+    monkeypatch.setattr("app.graph.hub.get_model", lambda role: model)
 
     from app.graph.hub import _router_node
 
@@ -140,8 +101,8 @@ async def test_router_node_null_parse_sets_clarification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When parsed is None (structured-output failure), route is None and clarification is set."""
-    fake_model = FakeStructuredOutputModel(parsed_result=None)
-    monkeypatch.setattr("app.graph.hub.get_model", lambda role: fake_model)
+    model = _fake(null_parse=True)
+    monkeypatch.setattr("app.graph.hub.get_model", lambda role: model)
 
     from app.graph.hub import _router_node
 
@@ -156,8 +117,8 @@ async def test_router_node_null_parse_has_no_routing_confidence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed parse leaves routing_confidence as None."""
-    fake_model = FakeStructuredOutputModel(parsed_result=None)
-    monkeypatch.setattr("app.graph.hub.get_model", lambda role: fake_model)
+    model = _fake(null_parse=True)
+    monkeypatch.setattr("app.graph.hub.get_model", lambda role: model)
 
     from app.graph.hub import _router_node
 
@@ -176,8 +137,8 @@ async def test_router_node_low_confidence_sets_clarification(
 ) -> None:
     """A below-threshold decision results in clarification, not a route."""
     decision = RoutingDecision(route=Route.COACH, confidence=0.5, rationale="ambiguous")
-    fake_model = FakeStructuredOutputModel(parsed_result=decision)
-    monkeypatch.setattr("app.graph.hub.get_model", lambda role: fake_model)
+    model = _fake(decision)
+    monkeypatch.setattr("app.graph.hub.get_model", lambda role: model)
 
     from app.graph.hub import _router_node
 

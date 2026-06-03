@@ -17,6 +17,7 @@ from app.graph.routing import Route, RoutingDecision
 from app.models.config import Role
 
 
+
 def make_fake_model(text: str = "Hello there, friend") -> BaseChatModel:
     """Return a deterministic, network-free chat model that streams in chunks.
 
@@ -34,10 +35,15 @@ class FakeStructuredOutputModel(BaseChatModel):
     the router node uses. Falls back to a high-confidence COACH decision when
     no result is supplied, so hub integration tests reach the coach subgraph.
 
+    Set ``simulate_null_parse=True`` to simulate a structured-output parse
+    failure (the router node will receive ``parsed=None`` in the include_raw
+    result dict).
+
     Streaming delegates to GenericFakeChatModel so token-delta tests pass.
     """
 
-    parsed_result: RoutingDecision | None = None
+    parsed_result: RoutingDecision | None = None  # type: ignore[assignment]
+    simulate_null_parse: bool = False
     chat_text: str = "Hello there, friend"
 
     @property
@@ -58,15 +64,28 @@ class FakeStructuredOutputModel(BaseChatModel):
             yield chunk
 
     def with_structured_output(self, schema, *, include_raw: bool = False, **kwargs):
-        decision = self.parsed_result or RoutingDecision(
-            route=Route.COACH,
-            confidence=0.9,
-            rationale="fake router — always coach",
-        )
+        # simulate_null_parse=True → emit parsed=None to exercise the safe-net path.
+        # parsed_result=None (default) → fall back to a default high-confidence COACH
+        # decision so hub integration tests reach the coach subgraph without setup.
+        if self.simulate_null_parse:
+            decision: RoutingDecision | None = None
+        elif self.parsed_result is None:
+            decision = RoutingDecision(
+                route=Route.COACH,
+                confidence=0.9,
+                rationale="fake router — always coach",
+            )
+        else:
+            decision = self.parsed_result
+
         raw_msg = AIMessage(content=self.chat_text)
 
         if include_raw:
-            result = {"raw": raw_msg, "parsed": decision, "parsing_error": None}
+            result = {
+                "raw": raw_msg,
+                "parsed": decision,
+                "parsing_error": None if decision is not None else Exception("parse failed"),
+            }
         else:
             result = decision
 
