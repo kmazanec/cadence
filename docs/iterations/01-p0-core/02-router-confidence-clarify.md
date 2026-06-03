@@ -58,3 +58,38 @@ Reqs 1–5; acceptance criteria 1–6. (Routing via structured output, numeric c
 None beyond F-01.
 
 ## Implementation notes (filled in by the building agent)
+
+**Status:** Complete — all five chunks delivered.
+
+**Chunk 1 — Threshold constant + decide_route:** Already present in the frozen
+contracts (`backend/app/graph/routing.py`). Tests added in
+`backend/tests/graph/test_routing_decision.py` covering the 0.69/0.70 boundary,
+None-decision safe-net, and all three Route arms.
+
+**Chunk 2 — Router node with structured output:** Replaced the F-01 stub router
+with a real structured-output call (`get_model('router').with_structured_output
+(RoutingDecision, include_raw=True)`). A null parse (parsed=None) triggers
+safe-net clarification via decide_route. Updated `conftest.py` to add
+`FakeStructuredOutputModel` that supports `with_structured_output(include_raw=True)`
+and streams token deltas. Decision: the `simulate_null_parse` boolean flag on the
+fake avoids overloading `parsed_result=None` (which means "use default COACH
+decision") with the failure-path semantics.
+
+**Chunk 3 — Hub conditional edge tests:** Added `test_hub_dispatch.py` driving
+the compiled hub with each Route above threshold and a below-threshold /
+null-parse case. Confirmed the clarify node is reached and no subgraph result
+is produced in the clarify case.
+
+**Chunk 4 — SSE clarification event:** Updated `chat.py` to emit
+`{type:'clarification', question, options}` from committed state when the router
+sets `clarification` in HubState. Events come from `updates` mode, not message
+deltas. Tests in `test_streaming_route_clarify.py` assert both the route and
+clarification paths.
+
+**Chunk 5 — Live smoke:** `test_router_live_smoke.py` skips without
+`OPENROUTER_API_KEY`. Three canonical messages parametrized over COACH /
+WORKOUT_GENERATE / WORKOUT_LOG. Registered `live` as a custom pytest mark.
+
+**Scope boundary held:** Full ADR-006 bounded-retry / error-feedback stays
+deferred to the resilience feature. The null-parse path delivers only the
+minimal safe-net (clarify instead of silently misroute).
