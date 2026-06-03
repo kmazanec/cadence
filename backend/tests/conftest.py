@@ -64,6 +64,27 @@ class FakeStructuredOutputModel(BaseChatModel):
             yield chunk
 
     def with_structured_output(self, schema, *, include_raw: bool = False, **kwargs):
+        # The single fake-model seam serves every structured-output role. When a
+        # non-router schema is requested (e.g. the logger's ParsedEntries), return
+        # an empty/default instance of that schema rather than a RoutingDecision —
+        # otherwise wiring the logger into the hub makes router-focused dispatch
+        # tests fail on a schema mismatch. Router tests that need a specific
+        # decision still pass it via parsed_result.
+        if schema is not RoutingDecision and isinstance(schema, type):
+            try:
+                instance = schema()
+            except Exception:
+                instance = None
+            if include_raw:
+                return RunnableLambda(
+                    lambda _: {
+                        "raw": AIMessage(content=self.chat_text),
+                        "parsed": instance,
+                        "parsing_error": None,
+                    }
+                )
+            return RunnableLambda(lambda _: instance)
+
         # simulate_null_parse=True → emit parsed=None to exercise the safe-net path.
         # parsed_result=None (default) → fall back to a default high-confidence COACH
         # decision so hub integration tests reach the coach subgraph without setup.
