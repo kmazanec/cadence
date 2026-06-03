@@ -189,6 +189,13 @@ async def _generator_boundary_node(state: HubState) -> dict:
 
     injuries = extract_injuries(state["user_message"])
 
+    # Forward only PRIOR history — exclude the current-turn HumanMessage the
+    # router just appended to HubState.messages. The generate node
+    # re-appends HumanMessage(user_message) last, so including it here would
+    # cause the model to receive the current turn twice.
+    all_messages = list(state.get("messages", []))
+    prior_messages = all_messages[:-1] if all_messages and isinstance(all_messages[-1], HumanMessage) else all_messages
+
     generator_input = {
         "user_message": state["user_message"],
         "injuries": injuries,
@@ -196,11 +203,7 @@ async def _generator_boundary_node(state: HubState) -> dict:
         "workout": None,
         "selected_exercise_ids": [],
         "retry_count": 0,
-        # Forward all hub messages (prior turns) as read-only context so the
-        # generate node can seed its tool-loop with conversation history. The
-        # router's just-appended HumanMessage is included — the generate node
-        # appends its own current-turn HumanMessage LAST so context is correct.
-        "messages": list(state.get("messages", [])),
+        "messages": prior_messages,
     }
 
     gen_output = await generator.ainvoke(generator_input)

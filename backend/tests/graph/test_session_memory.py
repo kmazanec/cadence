@@ -573,6 +573,17 @@ async def test_make_it_shorter_generator_sees_prior_workout(monkeypatch: pytest.
         "The generator boundary must forward prior history so 'make it shorter' can adjust."
     )
 
+    # The current-turn message must appear exactly once in the first generator
+    # invocation seed — the boundary must NOT forward it AND have the generate
+    # node append it, which would cause a duplicate.
+    seed = generator_model_inputs[0]
+    current_count = sum(
+        1 for m in seed if isinstance(m, HumanMessage) and m.content == "make it shorter"
+    )
+    assert current_count == 1, (
+        f"Current turn appeared {current_count} times in generator seed (expected 1)"
+    )
+
     prior_ai_summary = [m for m in all_turn2_messages if isinstance(m, AIMessage)]
     assert prior_ai_summary, (
         "Turn-2 generator input contains no AIMessage carrying the prior workout summary. "
