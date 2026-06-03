@@ -15,7 +15,14 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessageChunk
 
-from ..api.streaming import DoneEvent, ErrorEvent, RouteEvent, TokenEvent, encode_sse
+from ..api.streaming import (
+    ClarificationEvent,
+    DoneEvent,
+    ErrorEvent,
+    RouteEvent,
+    TokenEvent,
+    encode_sse,
+)
 from ..graph.hub import build_hub
 from ..graph.state import HubState
 from .schemas import ChatRequest
@@ -31,10 +38,15 @@ async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
     """Drive the hub graph and yield SSE-encoded frames.
 
     Emits:
-    - ``route`` once the router node commits a route to state.
+    - ``route`` once the router node commits a non-None route to state.
+    - ``clarification`` when the run ends in the clarification branch (route is None).
     - ``token`` for each model message chunk (from the coach or future agents).
     - ``done`` when the graph run completes.
     - ``error`` if an unhandled exception escapes.
+
+    Route and clarification events originate from committed graph state via the
+    ``updates`` stream, never from message deltas — this is the ADR-002 safe
+    pattern that prevents tool-argument text from leaking into events.
     """
     session_id = request.session_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": session_id}}
@@ -54,6 +66,7 @@ async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
 
     try:
         route_emitted = False
+        clarification_emitted = False
 
         async for _ns, mode, data in _hub.astream(
             initial, config, stream_mode=["messages", "updates"], subgraphs=True
@@ -66,15 +79,29 @@ async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
 
             elif mode == "updates":
                 # updates data is {node_name: node_output_dict}.
-                # Read route from the router node's output the first time it appears.
-                if not route_emitted and isinstance(data, dict):
+                # Route and clarification are read from committed state values,
+                # not reconstructed from message content.
+                if isinstance(data, dict):
                     for _node, node_out in data.items():
-                        if isinstance(node_out, dict):
+                        if not isinstance(node_out, dict):
+                            continue
+
+                        if not route_emitted:
                             route_val = node_out.get("route")
                             if route_val is not None:
                                 yield encode_sse(RouteEvent(route=route_val))
                                 route_emitted = True
-                                break
+
+                        if not clarification_emitted:
+                            clarification_val = node_out.get("clarification")
+                            if clarification_val is not None:
+                                yield encode_sse(
+                                    ClarificationEvent(
+                                        question=clarification_val.question,
+                                        options=clarification_val.options,
+                                    )
+                                )
+                                clarification_emitted = True
 
         yield encode_sse(DoneEvent())
 
