@@ -88,3 +88,25 @@ def test_extract_injuries_no_llm_call(monkeypatch) -> None:
     result = extract_injuries("my knee hurts")
     assert not called, "extract_injuries must not invoke the LLM"
     assert result == ["knee"]
+
+
+@pytest.mark.parametrize("message", [
+    # "fai" (hip) must not match "fairly", "fair", "fail", "faint"
+    "a fairly intense workout",
+    "fair warning",
+    "fail",
+    "faint",
+    # "hip" must not match "championship" or "relationship"
+    "championship training",
+    "relationship goals workout",
+    # "acl" (knee) must not match "obstacle"
+    "give me an obstacle course style workout",
+    # "neck" (cervical spine) must not match "bottleneck"
+    "bottleneck",
+])
+def test_extract_injuries_no_false_positives(message: str) -> None:
+    """Common non-injury words that share substrings with synonym patterns must not trigger extraction."""
+    result = extract_injuries(message)
+    assert result == [], (
+        f"extract_injuries({message!r}) = {result!r}, expected [] (false positive)"
+    )
