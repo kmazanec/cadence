@@ -85,10 +85,13 @@ export interface ChatResponse {
   clarification: ClarificationPrompt | null;
 }
 
-// The streamed event union — six closed variants, tagged by `type`.
+// The streamed event union — closed variants, tagged by `type`. `token` carries
+// the user-facing reply; `thinking` carries deemphasized progress (the router
+// deciding, a subagent working) and is rendered as faded chatter, not the reply.
 export type SSEEvent =
   | { type: "route"; route: Route }
   | { type: "token"; text: string }
+  | { type: "thinking"; source: string; text: string }
   | { type: "structured"; payload: StructuredPayload }
   | { type: "clarification"; question: string; options: string[] }
   | { type: "done" }

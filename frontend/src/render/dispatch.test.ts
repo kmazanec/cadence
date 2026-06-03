@@ -8,6 +8,8 @@ describe("reduceSSE", () => {
       { type: "route", route: "coach" },
       { type: "token", text: "Hel" },
       { type: "token", text: "lo" },
+      { type: "thinking", source: "router", text: "rou" },
+      { type: "thinking", source: "router", text: "ting" },
       { type: "structured", payload: { blocks: [] } },
       { type: "clarification", question: "Which?", options: ["a", "b"] },
       { type: "done" },
@@ -20,6 +22,32 @@ describe("reduceSSE", () => {
     expect(state.clarification).not.toBeNull();
     expect(state.done).toBe(true);
     expect(state.error).toBe("snag");
+  });
+
+  it("parses router thinking into readable lines, never raw JSON", () => {
+    const events: SSEEvent[] = [
+      { type: "thinking", source: "router", text: '{"route":"coach"' },
+      { type: "thinking", source: "router", text: ',"confidence":0.9,' },
+      {
+        type: "thinking",
+        source: "router",
+        text: '"rationale":"The user is asking a question."}',
+      },
+      { type: "token", text: "The answer." },
+    ];
+    const state = events.reduce(reduceSSE, initialChatState());
+    const joined = state.thinkingLines.join("\n");
+    // No raw JSON braces/keys leak into the displayed thinking.
+    expect(joined).not.toContain("{");
+    expect(joined).not.toContain('"route"');
+    expect(joined).not.toContain("confidence");
+    // The human rationale and a routing line are surfaced.
+    expect(joined).toContain("The user is asking a question.");
+    expect(state.thinkingLines.some((l) => /answer your question/i.test(l))).toBe(
+      true,
+    );
+    // The reply itself is unaffected by thinking.
+    expect(state.replyText).toBe("The answer.");
   });
 });
 

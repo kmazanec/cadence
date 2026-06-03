@@ -10,24 +10,35 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import AsyncIterator
+from typing import AsyncIterator, cast
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessageChunk
+from langchain_core.runnables import RunnableConfig
 
 from ..api.streaming import (
     ClarificationEvent,
     DoneEvent,
     ErrorEvent,
     RouteEvent,
+    StructuredEvent,
+    ThinkingEvent,
     TokenEvent,
     encode_sse,
 )
 from ..graph.hub import build_hub
+from ..graph.response_assembly import assemble_response
 from ..graph.state import HubState
 from ..observability import logging as obs
 from .schemas import ChatRequest
+
+# The single node whose model output IS the user-facing reply. Every other node
+# that runs a model (the router classifying, the generator's tool reasoning) has
+# its deltas surfaced as deemphasized 'thinking', never as the reply. Naming the
+# reply node explicitly is what keeps the router's structured-decision JSON out
+# of the conversation (the bug where '{"route":...}' showed up as the answer).
+_REPLY_NODE = "coach_answer"
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +68,7 @@ async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
     threading.
     """
     session_id = request.session_id or str(uuid.uuid4())
-    config = {"configurable": {"thread_id": session_id}}
+    config: RunnableConfig = {"configurable": {"thread_id": session_id}}
 
     # Bind the correlation id to the current async task; downstream emitters
     # read it from the ContextVar without needing it in their call signatures.
@@ -85,10 +96,22 @@ async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
                 initial, config, stream_mode=["messages", "updates"], subgraphs=True
             ):
                 if mode == "messages":
-                    msg, _meta = data
-                    # Emit token events for AI message chunks with content.
+                    msg, meta = data
                     if isinstance(msg, AIMessageChunk) and msg.content:
-                        yield encode_sse(TokenEvent(text=str(msg.content)))
+                        text = str(msg.content)
+                        # The reply node's deltas are the answer; every other
+                        # node's deltas (router classifying, generator reasoning)
+                        # are 'thinking' — shown deemphasized, never as the reply.
+                        node = meta.get("langgraph_node") if isinstance(meta, dict) else None
+                        if node == _REPLY_NODE:
+                            yield encode_sse(TokenEvent(text=text))
+                        else:
+                            # Tag the source so the client parses router fragments
+                            # (partial decision JSON) differently from a subagent's
+                            # prose, and never shows raw JSON.
+                            yield encode_sse(
+                                ThinkingEvent(source=str(node or "agent"), text=text)
+                            )
 
                 elif mode == "updates":
                     # updates data is {node_name: node_output_dict}.
@@ -115,6 +138,17 @@ async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
                                         )
                                     )
                                     clarification_emitted = True
+
+        # Emit the structured payload (a workout or a log) from committed state.
+        # The generator and logger produce cards, not streamed prose — their
+        # reply lives here, assembled from the final state via the same function
+        # the non-streaming envelope uses, so the two stay in lock-step.
+        snapshot = await _hub.aget_state(config)
+        # snapshot.values is the committed HubState as a plain dict; cast to the
+        # TypedDict so assemble_response sees the shape it expects.
+        response = assemble_response(cast(HubState, snapshot.values))
+        if response.structured is not None:
+            yield encode_sse(StructuredEvent(payload=response.structured))
 
         yield encode_sse(DoneEvent())
 

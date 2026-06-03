@@ -8,12 +8,17 @@
 import { useState, useRef, useEffect } from "react";
 import { initialChatState, reduceSSE } from "../render/dispatch";
 import { streamChat } from "./sseClient";
-import type { Route, SSEEvent } from "../types/api";
+import { WorkoutCardView } from "../render/WorkoutCardView";
+import { LogCardView } from "../render/LogCardView";
+import type { Route, SSEEvent, StructuredPayload } from "../types/api";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
   route?: Route | null;
+  // Human-readable thinking lines (never raw JSON). Persist after the answer.
+  thinkingLines?: string[];
+  structured?: StructuredPayload | null;
   isStreaming?: boolean;
 }
 
@@ -58,6 +63,8 @@ export default function ChatApp() {
             ...last,
             content: chatState.replyText,
             route: chatState.route,
+            thinkingLines: chatState.thinkingLines,
+            structured: chatState.structured,
           };
         }
         return next;
@@ -122,28 +129,75 @@ export default function ChatApp() {
             </div>
           )}
 
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-            >
+          {messages.map((msg, i) => {
+            // What the assistant turn has produced so far.
+            const hasReply = !!msg.content;
+            const hasCard = !!msg.structured;
+            const thinkingLines = msg.thinkingLines ?? [];
+            const hasThinking =
+              msg.role === "assistant" && thinkingLines.length > 0;
+            // Nothing has streamed in yet — show a bare placeholder.
+            const isEmpty =
+              msg.role === "assistant" &&
+              !hasReply &&
+              !hasCard &&
+              !hasThinking;
+
+            return (
               <div
-                className={`rounded-card px-card py-3 max-w-[80%] ${
-                  msg.role === "user"
-                    ? "bg-accent text-white"
-                    : "bg-surface border border-border text-text-primary"
-                }`}
+                key={i}
+                className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
               >
-                {msg.content ? (
-                  <p className="text-body whitespace-pre-wrap">{msg.content}</p>
-                ) : msg.isStreaming ? (
-                  <span className="text-text-secondary text-sm">
-                    Thinking…
-                  </span>
-                ) : null}
+                <div
+                  className={`rounded-card px-card py-3 max-w-[80%] ${
+                    msg.role === "user"
+                      ? "bg-accent text-white"
+                      : "bg-surface border border-border text-text-primary"
+                  }`}
+                >
+                  {/* Deemphasized 'thinking' trace — parsed, never raw JSON.
+                      Stays visible above the answer after it arrives. */}
+                  {hasThinking && (
+                    <div className="mb-2 border-l-2 border-border pl-3 space-y-0.5">
+                      <p className="text-xs font-subheading uppercase tracking-wide text-text-secondary opacity-70">
+                        Thinking
+                      </p>
+                      {thinkingLines.map((line, li) => (
+                        <p
+                          key={li}
+                          className="text-sm italic text-text-secondary opacity-70 whitespace-pre-wrap"
+                        >
+                          {line}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Workout / log cards render the structured payload. */}
+                  {msg.structured && msg.route === "workout_generate" && (
+                    <WorkoutCardView
+                      payload={msg.structured as Parameters<typeof WorkoutCardView>[0]["payload"]}
+                    />
+                  )}
+                  {msg.structured && msg.route === "workout_log" && (
+                    <LogCardView
+                      payload={msg.structured as Parameters<typeof LogCardView>[0]["payload"]}
+                    />
+                  )}
+
+                  {/* The conversational reply (coach). */}
+                  {hasReply && (
+                    <p className="text-body whitespace-pre-wrap">{msg.content}</p>
+                  )}
+
+                  {/* Bare placeholder before anything has streamed in. */}
+                  {isEmpty && msg.isStreaming && (
+                    <span className="text-text-secondary text-sm">Thinking…</span>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           <div ref={bottomRef} />
         </div>

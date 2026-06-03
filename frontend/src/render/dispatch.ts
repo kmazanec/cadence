@@ -9,6 +9,12 @@ import type {
   SSEEvent,
   StructuredPayload,
 } from "../types/api";
+import {
+  appendThinking,
+  emptyThinkingBuffers,
+  renderThinking,
+  type ThinkingBuffers,
+} from "./thinking";
 
 function assertNever(value: never): never {
   throw new Error(`Unhandled variant: ${JSON.stringify(value)}`);
@@ -18,6 +24,12 @@ function assertNever(value: never): never {
 export interface ChatState {
   route: Route | null;
   replyText: string;
+  // Raw 'thinking' fragments, kept per-source so router JSON and subagent prose
+  // can be parsed apart. Never displayed directly — see `thinkingLines`.
+  thinking: ThinkingBuffers;
+  // Human-readable, deemphasized progress lines derived from `thinking`. This is
+  // what the UI shows; it never contains raw JSON. Persists after the answer.
+  thinkingLines: string[];
   structured: StructuredPayload | null;
   clarification: { question: string; options: string[] } | null;
   error: string | null;
@@ -28,6 +40,8 @@ export function initialChatState(): ChatState {
   return {
     route: null,
     replyText: "",
+    thinking: emptyThinkingBuffers(),
+    thinkingLines: [],
     structured: null,
     clarification: null,
     error: null,
@@ -35,13 +49,17 @@ export function initialChatState(): ChatState {
   };
 }
 
-// Reduce one SSE event into chat state. Exhaustive over all six variants.
+// Reduce one SSE event into chat state. Exhaustive over all variants.
 export function reduceSSE(state: ChatState, event: SSEEvent): ChatState {
   switch (event.type) {
     case "route":
       return { ...state, route: event.route };
     case "token":
       return { ...state, replyText: state.replyText + event.text };
+    case "thinking": {
+      const thinking = appendThinking(state.thinking, event.source, event.text);
+      return { ...state, thinking, thinkingLines: renderThinking(thinking) };
+    }
     case "structured":
       return { ...state, structured: event.payload };
     case "clarification":
