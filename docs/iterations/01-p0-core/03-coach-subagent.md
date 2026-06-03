@@ -52,3 +52,11 @@ None beyond F-01.
 - **Explanation note:** Emitted in `_coach_boundary_node` in `hub.py`, not in the subgraph itself, because `CoachState` carries no `explanation` field (HubState owns the explanation list). Uses `claim='note'`, `relation='name_match'` (frozen vocab), `subject='coach'`, `detail='answered by coach'`. Exactly one note per coach turn.
 - **Hub wiring:** `hub.py` reproduced in this branch (forked from contracts-only base); coach boundary and response-assembly nodes connect without change from the F-01 pattern. No new node names introduced.
 - **Live smoke test:** skipped unless `OPENROUTER_API_KEY` is set; asserts at least one primary deadlift muscle is mentioned. Never gates CI.
+
+### Build outcome
+
+- **Shippable:** yes. Integrated via cherry-pick onto `integration/01-p0-core`. Predicted convergence resolved in place: this branch forked off the contracts-only base, so its `hub.py`/`coach/graph.py` collided with F-02's real router and F-03's own BRAND voice prompt — resolved by keeping the real router (F-02) and the BRAND voice prompt + coach explanation note (F-03). Linear history preserved.
+- **Acceptance:** met. PRD §6 #1 (coach answers a fitness question conversationally) satisfied; the coach subgraph is reached via the unique `coach_boundary` node and emits exactly one `claim='note'` explanation. Integrated suite includes the coach conversation + node tests.
+- **Unresolved gating:** none.
+- **Deferred (low):** voice quality is asserted by prompt-substring checks, not by judging live model output; the live answer smoke is skipped offline.
+- **QA evidence:** "139 passed, 4 skipped" (full suite, offline); e2e smoke routed a coach question and emitted `{"type":"route","route":"coach"}` then `{"type":"done"}`.

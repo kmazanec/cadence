@@ -89,3 +89,12 @@ catalogue name separately if needed. Unmatched entries surface the original text
 The `_extract_entries` function (Chunk 2) requires a real LLM call to exercise end-to-end.
 The tests stub this step. The hub integration test (`test_workout_log_route_dispatches_to_logger`)
 patches both `_router_node` and `_extract_entries` for a deterministic full-graph run.
+
+### Build outcome
+
+- **Shippable:** yes. Integrated via cherry-pick onto `integration/01-p0-core`. Predicted convergence on `hub.py` (logger boundary + `_get_log_repository_for_hub` seam + WORKOUT_LOG edge) resolved in place against the already-applied coach + generator wiring; linear history preserved.
+- **Acceptance:** met. PRD §6 #11 (parse "3x10 bench press at 185 lbs"), #12 (no-match → flagged unmatched, never invented), #13 (resolved entries persisted via `LogRepository`) satisfied. RapidFuzz `WRatio(cutoff 80)` narrows then LLM verifies the shortlist (Blocker B-2: hybrid verify ON by default); logger treated as a structured-output role in `validate_model_config()`.
+- **Unresolved gating:** none.
+- **Integration note (resolved here, not in this branch):** wiring the live logger into the hub surfaced a latent break in F-02's `test_hub_dispatch_workout_log` — its fake model returned a `RoutingDecision` for *every* `with_structured_output` schema, so the logger's `ParsedEntries` extraction read `.entries` off a `RoutingDecision` and raised `AttributeError`. Fixed on the integration branch by making the shared fake-model seam schema-aware (returns a default instance of the requested schema for non-router schemas). This is the one integration failure the per-feature scoped runs could not see.
+- **Deferred (low):** the LLM-verify and extraction steps are stubbed offline; the live path needs a real key.
+- **QA evidence:** "139 passed, 4 skipped" (full suite, offline) including `test_workout_log_route_dispatches_to_logger` and the logger resolver/subgraph tests.

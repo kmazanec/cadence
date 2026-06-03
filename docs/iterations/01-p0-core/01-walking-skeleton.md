@@ -111,3 +111,11 @@ affects the running agent. All 35 backend tests run without a network call.
 4. Boots with fake model/no key (35 tests, no network); fails fast with bad model config (test)
 5. Route/structured events sourced from committed state updates, not message deltas (see emitter)
 6. Changing MODEL_CONFIG dict changes the model without code change (architecture, not test-verified)
+
+### Build outcome
+
+- **Shippable:** yes. Integrated onto `integration/01-p0-core` via cherry-pick (linear history, no merge commits).
+- **Acceptance:** met. PRD §6 #19 (clean-clone demo runs), #17 (branded neutral UI), #21 (config-only model swap) observably satisfied; the full integrated suite reaches the hub headless and the e2e SSE smoke shows `{type:'route'}` + `{type:'done'}` for a coach turn.
+- **Unresolved gating:** none.
+- **Deferred (low):** coach token streaming through the boundary node's `ainvoke` path is exercised by unit tests, not by the integrator's minimal e2e fake (token deltas require the messages-mode stream seam used in the dedicated streaming tests).
+- **QA evidence:** "139 passed, 4 skipped" (full suite, offline) and `data: {"type": "route", "route": "coach"}` from the assembled `/chat` endpoint.

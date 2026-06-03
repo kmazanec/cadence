@@ -93,3 +93,11 @@ WORKOUT_GENERATE / WORKOUT_LOG. Registered `live` as a custom pytest mark.
 **Scope boundary held:** Full ADR-006 bounded-retry / error-feedback stays
 deferred to the resilience feature. The null-parse path delivers only the
 minimal safe-net (clarify instead of silently misroute).
+
+### Build outcome
+
+- **Shippable:** yes. Integrated via cherry-pick onto `integration/01-p0-core` (its 6 unique commits on top of F-01; linear history).
+- **Acceptance:** met. PRD §6 #1–#6 satisfied — structured-output classification (`with_structured_output(..., include_raw=True)`), `CONFIDENCE_THRESHOLD=0.7` gate, dispatch above threshold, clarify below threshold or on null parse. The integrated `test_hub_dispatch.py` drives all three route branches plus the clarify/null-parse branches through the compiled hub.
+- **Unresolved gating:** none.
+- **Deferred (low):** the live three-canonical-message smoke (`test_router_live_smoke.py`) is skipped offline; full ADR-006 bounded retry remains F-06's scope.
+- **QA evidence:** e2e SSE smoke produced `data: {"type": "clarification", ...}` for a below-threshold input and `{"type":"route","route":"coach"}` above threshold.

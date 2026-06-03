@@ -91,3 +91,11 @@ The frontend `selectRender` dispatch already maps `workout_generate` →
 from state to the client. A full React `WorkoutCard` component is the UI
 deliverable of a later feature; this iteration delivers the type/dispatch
 machinery that ensures the route is correct.
+
+### Build outcome
+
+- **Shippable:** yes. Integrated via cherry-pick onto `integration/01-p0-core`. Predicted convergence on `hub.py` (generator boundary + WORKOUT_GENERATE edge) and `coach/graph.py` resolved in place against the already-applied coach + router work; linear history preserved.
+- **Acceptance:** met. PRD §6 #7 (dumbbell upper-body workout), #8 (equipment-satisfiable search), #14 (empty-search → graceful empty result, no hallucination) and #15 (output gate rejects unknown exercise IDs) satisfied. The dataset-bounded output gate is in the critical-path suite (`tests/critical/test_output_gate.py` — 7 passed), and the generator subgraph integration tests run against the fake tool seam.
+- **Unresolved gating:** none.
+- **Deferred (low):** P1 injury contraindication (#9) and bilateral pairing (#10) are P1, not P0 — machinery present, not asserted this iteration. The React `WorkoutCard` render component is a later UI deliverable (this ships the route + structured-payload dispatch).
+- **QA evidence:** "139 passed, 4 skipped" (full suite) including all generator unit/integration/critical tests; gate test `test_bogus_id_is_caught_by_gate` PASSED.
