@@ -19,33 +19,55 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-from ..graph.routing import CONFIDENCE_THRESHOLD, Route, RoutingDecision
+from ..graph.routing import Route, RoutingDecision, decide_route
 from ..graph.state import CoachResult, HubState
+from ..models.factory import get_model
 
 
 # ---------------------------------------------------------------------------
-# Router node (placeholder — routes to coach unconditionally)
+# Router node — structured-output classification with include_raw safe-net
 # ---------------------------------------------------------------------------
 
 
 async def _router_node(state: HubState) -> dict:
-    """Route the turn to the coach unconditionally.
+    """Classify the user message into a route via LLM structured output.
 
-    The router's conditional-edge map and HubState fields are wired correctly;
-    the routing decision logic will be replaced with a real structured-output
-    model call without changing any downstream node.
+    Uses include_raw=True so that a parse failure (parsed=None) is caught and
+    turned into a clarifying question rather than silently misrouting.
+    Confidence below CONFIDENCE_THRESHOLD also falls back to clarification —
+    this is the minimal safe-net; bounded retry lives in the resilience feature.
     """
-    decision = RoutingDecision(
-        route=Route.COACH,
-        confidence=CONFIDENCE_THRESHOLD + 0.1,
-        rationale="placeholder — routes every turn to the coach",
-    )
-    return {
-        "route": decision.route,
-        "routing_confidence": decision.confidence,
-        "routing_raw": decision.model_dump(),
+    model = get_model("router")
+    structured = model.with_structured_output(RoutingDecision, include_raw=True)
+
+    raw_result: dict = await structured.ainvoke(state["user_message"])
+
+    parsed: RoutingDecision | None = raw_result.get("parsed")
+    raw_msg = raw_result.get("raw")
+
+    # Capture the raw model output for observability; store as dict so it
+    # serialises safely across the checkpointer boundary.
+    routing_raw: dict | None = None
+    if raw_msg is not None:
+        try:
+            routing_raw = raw_msg.model_dump() if hasattr(raw_msg, "model_dump") else {"content": str(raw_msg)}
+        except Exception:
+            routing_raw = {"content": str(raw_msg)}
+
+    route, clarification = decide_route(parsed)
+
+    routing_confidence: float | None = parsed.confidence if parsed is not None else None
+
+    result: dict = {
+        "route": route,
+        "routing_confidence": routing_confidence,
+        "routing_raw": routing_raw,
         "messages": [HumanMessage(content=state["user_message"])],
     }
+    if clarification is not None:
+        result["clarification"] = clarification
+
+    return result
 
 
 # ---------------------------------------------------------------------------
