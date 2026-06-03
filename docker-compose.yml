@@ -3,8 +3,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
+    # Not published to the host — the frontend container reverse-proxies to it
+    # over the internal Docker network. Everything reaches it through :8000.
+    expose:
+      - "8000"
     env_file:
       - ./.env
     environment:
@@ -22,8 +24,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    # The single public entry point: serves the SPA and reverse-proxies
+    # /chat + /health to the backend. Browse + API both via http://localhost:8000.
     ports:
-      - "5173:80"
+      - "8000:80"
     depends_on:
       - backend
 

@@ -29,7 +29,8 @@ cp .env.example .env                      # then add your OPENROUTER_API_KEY
 docker compose up
 ```
 
-Open **http://localhost:5173**. (Backend serves on `:8000`.)
+Open **http://localhost:8000** — the frontend serves the UI and reverse-proxies
+the API to the backend, so everything runs through this one port.
 
 ## Local development (no Docker)
 
@@ -49,7 +50,7 @@ Frontend — Node 20:
 ```bash
 cd frontend
 npm install
-npm run dev                                # http://localhost:5173, proxies /chat → :8000
+npm run dev                                # http://localhost:8001, proxies /chat → :8000
 ```
 
 ## Running tests
