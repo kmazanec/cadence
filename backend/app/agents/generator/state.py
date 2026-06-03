@@ -23,6 +23,8 @@ class GeneratorState(TypedDict):
     selected_exercise_ids: list[str]
     retry_count: int
     # Read-only prior conversation context, supplied by the hub boundary. No
-    # reducer: the generator never appends to it, it only seeds the model. Absent
-    # when the generator is driven without a conversation thread; treat as [].
+    # reducer: the generator never appends to it, it only seeds the model's
+    # tool-loop so follow-up requests ('make it shorter') can resolve against
+    # the prior workout. Absent when the generator is driven without a
+    # conversation thread; treat as [].
     messages: NotRequired[list[BaseMessage]]

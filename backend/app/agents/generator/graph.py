@@ -6,11 +6,12 @@ validates the assembled workout through the output gate as a separate node.
 Flow:
   generate (tool loop internally) -> gate -> END or generate (on gate failure)
 
-The tool loop's own message history lives as a local variable within the
-generate node, not on GeneratorState. GeneratorState carries a read-only
-``messages`` key for prior conversation context the hub boundary supplies, but
-the generator never appends to it — the isolated-state contract keeps the hub as
-the single owner of the conversation thread.
+The tool loop's own message history lives as a local variable within the generate
+node. GeneratorState carries a read-only ``messages`` key for prior conversation
+context (supplied by the hub boundary) so follow-up requests like 'make it
+shorter' can resolve against the prior workout. The generator never writes back
+to this key — ADR-004 isolated-state: the hub remains the single owner of the
+conversation thread.
 
 ADR-006: retries are bounded by state.retry_count < RETRY_CEILING; no RetryPolicy.
 ADR-002: the assembled workout is stored on state, never inferred from deltas.
@@ -161,10 +162,15 @@ def _make_generate_node(repo: ExerciseRepository):
         except (AttributeError, NotImplementedError):
             bound_model = model
 
-        # Build initial conversation. On retry the user_message is the same;
-        # we start fresh (no prior tool history) so the model can try again.
+        # Seed the tool-loop with prior conversation context (if any) so the
+        # model can adjust a prior workout. Prior messages come from the hub
+        # thread; the current request lands as the final HumanMessage. On retry
+        # we restart from the same seed — no prior tool history — so the model
+        # gets a clean slate to try a different exercise selection.
+        prior_context = list(state.get("messages", []))
         messages: list = [
             SystemMessage(content=_SYSTEM_PROMPT),
+            *prior_context,
             HumanMessage(content=state["user_message"]),
         ]
 

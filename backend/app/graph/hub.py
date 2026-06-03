@@ -59,7 +59,14 @@ async def _router_node(state: HubState) -> dict:
     model = get_model("router")
     structured = model.with_structured_output(RoutingDecision, include_raw=True)
 
-    raw_result: dict = await structured.ainvoke(state["user_message"])
+    # Build the router's input: prior messages from the thread (already committed
+    # by the checkpointer) followed by the current user turn. The router sees
+    # full conversation context so follow-ups and clarify-answers are classified
+    # with awareness of what came before. The schema-aware fake ignores input, so
+    # existing dispatch tests are unaffected.
+    prior_messages = list(state.get("messages", []))
+    router_input = prior_messages + [HumanMessage(content=state["user_message"])]
+    raw_result: dict = await structured.ainvoke(router_input)
 
     parsed: RoutingDecision | None = raw_result.get("parsed")
     raw_msg = raw_result.get("raw")
@@ -130,9 +137,15 @@ async def _coach_boundary_node(state: HubState) -> dict:
     from ..agents.coach.graph import build_coach_subgraph
 
     coach = build_coach_subgraph()
+    # Forward only PRIOR history — exclude the current-turn HumanMessage the
+    # router just appended to HubState.messages. The coach's _answer_node
+    # re-appends HumanMessage(user_message), so including it here would cause
+    # the model to receive the current turn twice.
+    all_messages = list(state.get("messages", []))
+    prior_messages = all_messages[:-1] if all_messages and isinstance(all_messages[-1], HumanMessage) else all_messages
     coach_input = {
         "user_message": state["user_message"],
-        "messages": list(state.get("messages", [])),
+        "messages": prior_messages,
         "answer": "",
     }
     # Invoke the subgraph — no checkpointer needed here, hub holds the thread.
@@ -183,6 +196,11 @@ async def _generator_boundary_node(state: HubState) -> dict:
         "workout": None,
         "selected_exercise_ids": [],
         "retry_count": 0,
+        # Forward all hub messages (prior turns) as read-only context so the
+        # generate node can seed its tool-loop with conversation history. The
+        # router's just-appended HumanMessage is included — the generate node
+        # appends its own current-turn HumanMessage LAST so context is correct.
+        "messages": list(state.get("messages", [])),
     }
 
     gen_output = await generator.ainvoke(generator_input)
@@ -267,9 +285,23 @@ async def _generator_boundary_node(state: HubState) -> dict:
         }
 
     result = GeneratorResult(workout=workout, selected_exercise_ids=selected_ids)
+
+    # Append a compact workout-summary AIMessage so the conversation thread
+    # carries the prior workout for follow-up adjustments. Storing as a plain
+    # string (not the full WorkoutPayload) avoids round-tripping complex objects
+    # through the msgpack checkpointer — exercise names + block structure are
+    # enough context for 'make it shorter' or 'swap an exercise'.
+    block_summaries = []
+    for block in workout.blocks:
+        ex_names = [p.name for p in block.exercises]
+        block_summaries.append(f"{block.name}: {', '.join(ex_names)}")
+    summary_text = "Workout generated — " + " | ".join(block_summaries)
+    summary_msg = AIMessage(content=summary_text)
+
     return {
         "subgraph_result": result,
         "explanation": reasons,
+        "messages": [summary_msg],
     }
 
 

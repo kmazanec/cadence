@@ -47,6 +47,22 @@ None.
 
 ## Implementation notes (filled in by the building agent)
 
+### What shipped
+
+**Persistence was already working.** The MemorySaver checkpointer with per-thread isolation and the `add_messages` reducer were in place from earlier work. Empirically verified with a two-turn probe: re-passing `messages: []` on the second invocation is a no-op; the checkpointer resumes the thread and `add_messages` accumulates correctly — [Human, AI, Human, AI] with no doubling. This correct behavior is now regression-locked by `test_no_turn_duplication_on_reinvocation`.
+
+**Three behavior fixes implemented:**
+
+1. **Coach double-append bug (live on first turn):** The router appends `HumanMessage(user_message)` to `HubState.messages` before the coach boundary runs. The boundary was forwarding the full messages list (including that just-appended turn) into `coach_input['messages']`, and `_answer_node` re-appends `HumanMessage(user_message)`. Result: the coach model received the current turn twice. Fixed in `_coach_boundary_node` to forward only prior history — slicing off the trailing `HumanMessage` the router just added.
+
+2. **Router context (criterion 2):** `_router_node` previously invoked the structured model with a bare `state['user_message']` string. Changed to pass `list(state.get('messages', [])) + [HumanMessage(current)]` so clarify-answers and follow-ups are classified with full conversation context. The schema-aware fake (`RunnableLambda(lambda _: result)`) ignores input, so all existing dispatch/router tests stay green.
+
+3. **Generator prior context + workout summary (criterion 1):** Generator boundary now passes `'messages': list(state.get('messages', []))` to the subgraph. `GeneratorState` gained a read-only `messages: NotRequired[list[BaseMessage]]` field (no reducer — input-only, hub remains the single owner). `_generate_node` seeds its tool-loop with `[SystemMessage, *prior_context, HumanMessage(user_message)]`. The boundary success path now appends a compact `AIMessage` summarising the workout (exercise names + block structure) to `HubState.messages` so the transcript carries the prior workout for follow-up adjustments.
+
+**No changes to `chat.py` or the checkpointer setup.** The first-invocation gating the spec mentioned as a possible approach was not needed — accumulator doubling was never live on the pinned langgraph version.
+
+**Deferred hardening:** The msgpack `'Deserializing unregistered type ... will be blocked in a future version'` warning is present when round-tripping complex state (Route, CoachResult, WorkoutPayload) through the checkpointer. It is non-fatal now but will become a hard failure under future langgraph strict-msgpack mode. Mitigated here by storing only plain-string workout summaries (not full WorkoutPayload) in the messages transcript; full hardening (registering types or switching serialisation) is a separate task.
+
 <!-- BUILD-PLAN:kmaz-plan-iteration -->
 
 ## Build plan (kmaz-plan-iteration) — F-08
@@ -104,37 +120,37 @@ F-08 is behavior-wiring on already-working checkpointer infra, not a schema or c
 
 ### Build steps (checkbox)
 
-- [ ] **1.** Write the no-doubling REGRESSION test first (criterion 3): build_hub(), invoke the same thread_id twice with fresh initial dicts (messages:[]), assert final['messages'] == exactly [Human,AI,Human,AI] with the two distinct user_message strings in order (sum of HumanMessage == 2). Document in the test that it is expected to PASS today — it locks current correct behavior, it does NOT drive a chat.py change.
+- [x] **1.** Write the no-doubling REGRESSION test first (criterion 3): build_hub(), invoke the same thread_id twice with fresh initial dicts (messages:[]), assert final['messages'] == exactly [Human,AI,Human,AI] with the two distinct user_message strings in order (sum of HumanMessage == 2). Document in the test that it is expected to PASS today — it locks current correct behavior, it does NOT drive a chat.py change.
   - Files: `backend/tests/graph/test_session_memory.py`
   - Verify: uv run pytest backend/tests/graph/test_session_memory.py -k no_doubling — passes immediately (regression lock)
-- [ ] **2.** Write the FAILING coach double-append + prior-context test (criterion 2 part A + live-bug regression): spy on the coach model's ainvoke (capture messages). Turn 1 (coach route): assert the current user_message appears EXACTLY ONCE in the coach model's input (RED today — it appears twice). Turn 2 follow-up on same thread: assert turn-1 messages are present AND current turn appears once.
+- [x] **2.** Write the FAILING coach double-append + prior-context test (criterion 2 part A + live-bug regression): spy on the coach model's ainvoke (capture messages). Turn 1 (coach route): assert the current user_message appears EXACTLY ONCE in the coach model's input (RED today — it appears twice). Turn 2 follow-up on same thread: assert turn-1 messages are present AND current turn appears once.
   - Files: `backend/tests/graph/test_session_memory.py`
   - Verify: uv run pytest backend/tests/graph/test_session_memory.py -k coach_sees_prior_turn_once — RED before fix
-- [ ] **3.** Fix the coach-boundary double-append in _coach_boundary_node: forward only PRIOR history into coach_input['messages'] (exclude the trailing current HumanMessage the router already appended), since _answer_node re-appends HumanMessage(user_message). Minimal change: slice off the last message when it is the current-turn HumanMessage. Keep the single-owner reducer invariant (boundary still returns its own AIMessage).
+- [x] **3.** Fix the coach-boundary double-append in _coach_boundary_node: forward only PRIOR history into coach_input['messages'] (exclude the trailing current HumanMessage the router already appended), since _answer_node re-appends HumanMessage(user_message). Minimal change: slice off the last message when it is the current-turn HumanMessage. Keep the single-owner reducer invariant (boundary still returns its own AIMessage).
   - Files: `backend/app/graph/hub.py`
   - Verify: coach test GREEN (current message once, prior turn present); backend/tests/graph/subgraphs/coach/ and backend/tests/test_hub.py still pass
-- [ ] **4.** Write the FAILING clarify-answer router-context test (criterion 2 part B): spy on the router's structured-model invocation in _router_node to capture its input. Turn 1 yields a clarification (fake with low-confidence/None decision); turn 2 sends the bare answer. Assert turn 2's router input CONTAINS the prior turn-1 messages, not just the bare answer string.
+- [x] **4.** Write the FAILING clarify-answer router-context test (criterion 2 part B): spy on the router's structured-model invocation in _router_node to capture its input. Turn 1 yields a clarification (fake with low-confidence/None decision); turn 2 sends the bare answer. Assert turn 2's router input CONTAINS the prior turn-1 messages, not just the bare answer string.
   - Files: `backend/tests/graph/test_session_memory.py`
   - Verify: uv run pytest ... -k router_sees_prior — RED (router currently invokes with bare state['user_message'])
-- [ ] **5.** Change _router_node to classify with conversation context: invoke the structured model with a message list = list(state.get('messages',[])) + [HumanMessage(current user_message)] instead of the bare string. Keep appending exactly ONE HumanMessage to the returned messages (no double-append). The schema-aware fake ignores input, so dispatch/critical routing tests stay green.
+- [x] **5.** Change _router_node to classify with conversation context: invoke the structured model with a message list = list(state.get('messages',[])) + [HumanMessage(current user_message)] instead of the bare string. Keep appending exactly ONE HumanMessage to the returned messages (no double-append). The schema-aware fake ignores input, so dispatch/critical routing tests stay green.
   - Files: `backend/app/graph/hub.py`
   - Verify: router_sees_prior GREEN; backend/tests/graph/test_hub_dispatch.py, backend/tests/graph/test_router_node.py, backend/tests/critical/test_model_swap_routing.py all pass
-- [ ] **6.** Write the FAILING 'make it shorter' integration test (criterion 1, CRITICAL PATH): turn 1 routes to WORKOUT_GENERATE and produces a workout; turn 2 = 'make it shorter'. Patch/spy the generator's bound-model seam (app.agents.generator.graph._factory.get_model) to a recording fake that captures the messages it is invoked with. Assert turn 2's generator input contains prior-turn context (turn-1 HumanMessage content AND the workout-summary AIMessage).
+- [x] **6.** Write the FAILING 'make it shorter' integration test (criterion 1, CRITICAL PATH): turn 1 routes to WORKOUT_GENERATE and produces a workout; turn 2 = 'make it shorter'. Patch/spy the generator's bound-model seam (app.agents.generator.graph._factory.get_model) to a recording fake that captures the messages it is invoked with. Assert turn 2's generator input contains prior-turn context (turn-1 HumanMessage content AND the workout-summary AIMessage).
   - Files: `backend/tests/graph/test_session_memory.py`
   - Verify: uv run pytest ... -k make_it_shorter — RED (generator gets only user_message today)
-- [ ] **7.** Add a read-only `messages: list[BaseMessage]` field to GeneratorState (NO reducer; comment it as input-only prior context, never written back, preserving ADR-004 isolation). Default empty so existing single-turn generator tests that construct the input dict still pass.
+- [x] **7.** Add a read-only `messages: list[BaseMessage]` field to GeneratorState (NO reducer; comment it as input-only prior context, never written back, preserving ADR-004 isolation). Default empty so existing single-turn generator tests that construct the input dict still pass.
   - Files: `backend/app/agents/generator/state.py`
   - Verify: uv run python -c 'from app.agents.generator.state import GeneratorState; assert "messages" in GeneratorState.__annotations__'; backend/tests/integration/test_generator_subgraph.py still passes
-- [ ] **8.** Thread prior context into the generator boundary AND append a workout summary: in _generator_boundary_node add 'messages': list(state.get('messages',[])) to generator_input (mirroring the coach boundary), and on the SUCCESS path append a compact AIMessage summarizing the produced workout (exercise names/IDs + block structure) to the returned messages so the transcript carries the prior workout for 'adjust it'. Keep injuries/targets handling unchanged.
+- [x] **8.** Thread prior context into the generator boundary AND append a workout summary: in _generator_boundary_node add 'messages': list(state.get('messages',[])) to generator_input (mirroring the coach boundary), and on the SUCCESS path append a compact AIMessage summarizing the produced workout (exercise names/IDs + block structure) to the returned messages so the transcript carries the prior workout for 'adjust it'. Keep injuries/targets handling unchanged.
   - Files: `backend/app/graph/hub.py`
   - Verify: make_it_shorter test progresses; after a generator turn final['messages'] ends with an AIMessage describing the workout; backend/tests/test_hub.py passes
-- [ ] **9.** Seed prior context in _generate_node: build messages = [SystemMessage(_SYSTEM_PROMPT), *state.get('messages',[]), HumanMessage(state['user_message'])] so 'make it shorter' adjusts the latest request against history. Keep the current-turn HumanMessage LAST and leave the tool-loop and gate unchanged. Update the module docstring (lines 9-14) which currently asserts GeneratorState carries no messages.
+- [x] **9.** Seed prior context in _generate_node: build messages = [SystemMessage(_SYSTEM_PROMPT), *state.get('messages',[]), HumanMessage(state['user_message'])] so 'make it shorter' adjusts the latest request against history. Keep the current-turn HumanMessage LAST and leave the tool-loop and gate unchanged. Update the module docstring (lines 9-14) which currently asserts GeneratorState carries no messages.
   - Files: `backend/app/agents/generator/graph.py`
   - Verify: make_it_shorter test GREEN (recording fake sees prior HumanMessage + workout summary in turn-2 generator input); backend/tests/critical/test_recovery_no_hallucination.py and output_gate tests still pass (no hallucinated IDs)
-- [ ] **10.** Run the full backend suite to confirm no regression in router dispatch, coach, generator, logger, recovery, chat-endpoint, or streaming tests (the schema-aware fake seam must keep all green).
+- [x] **10.** Run the full backend suite to confirm no regression in router dispatch, coach, generator, logger, recovery, chat-endpoint, or streaming tests (the schema-aware fake seam must keep all green).
   - Files: `backend/`
   - Verify: uv run pytest — all pass; no MULTIPLE_SUBGRAPHS / reducer errors; live LLM tests skip offline (ADR-018)
-- [ ] **11.** Fill in the spec's Implementation notes: memory already worked at the persistence layer and doubling was never live on the pinned langgraph (regression-locked); the real work was the coach double-append fix, router-context, and generator prior-workout (messages field + summary AIMessage); no chat.py/checkpointer change; flag the msgpack unregistered-type warning as a deferred hardening item.
+- [x] **11.** Fill in the spec's Implementation notes: memory already worked at the persistence layer and doubling was never live on the pinned langgraph (regression-locked); the real work was the coach double-append fix, router-context, and generator prior-workout (messages field + summary AIMessage); no chat.py/checkpointer change; flag the msgpack unregistered-type warning as a deferred hardening item.
   - Files: `docs/iterations/03-p2-memory-observability/01-multi-turn-memory.md`
   - Verify: Implementation notes section is non-empty and matches shipped behavior
 
