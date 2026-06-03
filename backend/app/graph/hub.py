@@ -15,14 +15,20 @@ from __future__ import annotations
 
 from typing import Literal
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from ..agents.generator.injury_extraction import extract_injuries
 from ..data.json_repository import JsonExerciseRepository
 from ..graph.explanation import Reason
-from ..graph.routing import Route, RoutingDecision, decide_route
+from ..graph.routing import (
+    ROUTER_SYSTEM_PROMPT,
+    Route,
+    RoutingDecision,
+    decide_route,
+)
 from ..graph.state import CoachResult, GeneratorResult, HubState, WorkoutLogResult
 from ..models.config import MODEL_CONFIG
 from ..models.factory import get_model
@@ -61,13 +67,20 @@ async def _router_node(state: HubState) -> dict:
     model = get_model("router")
     structured = model.with_structured_output(RoutingDecision, include_raw=True)
 
-    # Build the router's input: prior messages from the thread (already committed
-    # by the checkpointer) followed by the current user turn. The router sees
-    # full conversation context so follow-ups and clarify-answers are classified
-    # with awareness of what came before. The schema-aware fake ignores input, so
+    # Build the router's input: a system prompt that defines the routing
+    # contract, then prior messages from the thread (already committed by the
+    # checkpointer), then the current user turn. The system prompt is what stops
+    # the model from conflating a QUESTION about an exercise ("what muscles does
+    # a deadlift work?") with a REQUEST to build a workout. The router sees full
+    # conversation context so follow-ups and clarify-answers are classified with
+    # awareness of what came before. The schema-aware fake ignores input, so
     # existing dispatch tests are unaffected.
     prior_messages = list(state.get("messages", []))
-    router_input = prior_messages + [HumanMessage(content=state["user_message"])]
+    router_input = (
+        [SystemMessage(content=ROUTER_SYSTEM_PROMPT)]
+        + prior_messages
+        + [HumanMessage(content=state["user_message"])]
+    )
     with obs.llm_call("router", MODEL_CONFIG["router"]):
         raw_result: dict = await structured.ainvoke(router_input)
 
@@ -399,7 +412,7 @@ async def _response_assembly_node(state: HubState) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def build_hub() -> StateGraph:
+def build_hub() -> CompiledStateGraph:
     """Build and compile the hub StateGraph with an in-memory checkpointer.
 
     The compiled graph is safe to invoke concurrently across sessions because

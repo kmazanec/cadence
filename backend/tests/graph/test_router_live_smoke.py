@@ -35,13 +35,21 @@ async def test_canonical_messages_route_correctly(
     message: str, expected_route: Route
 ) -> None:
     """Each canonical PRD message routes to its expected subgraph above threshold."""
-    from app.graph.routing import RoutingDecision
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from app.graph.routing import ROUTER_SYSTEM_PROMPT, RoutingDecision
     from app.models.factory import get_model
 
     model = get_model("router")
     structured = model.with_structured_output(RoutingDecision, include_raw=True)
 
-    raw_result: dict = await structured.ainvoke(message)
+    # Route through the same system prompt the production node uses, so this eval
+    # validates the real routing contract rather than a bare, prompt-less model.
+    router_input = [
+        SystemMessage(content=ROUTER_SYSTEM_PROMPT),
+        HumanMessage(content=message),
+    ]
+    raw_result: dict = await structured.ainvoke(router_input)
     parsed: RoutingDecision | None = raw_result.get("parsed")
 
     assert parsed is not None, (
