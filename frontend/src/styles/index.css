@@ -1,3 +1,98 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+   Cadence — global brand surface.
+   The atmosphere (canvas tint, faint training-grid texture, type smoothing)
+   lives here; everything else stays in token-driven utility classes.
+---------------------------------------------------------------------------- */
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    color: theme("colors.ink");
+    background-color: theme("colors.canvas");
+    /* Faint blueprint grid + a soft volt glow bleeding from the top — gives the
+       bright canvas depth without a heavy dark theme. */
+    background-image:
+      radial-gradient(
+        120% 80% at 80% -10%,
+        rgba(198, 244, 50, 0.16) 0%,
+        rgba(198, 244, 50, 0) 55%
+      ),
+      radial-gradient(
+        90% 70% at 0% 0%,
+        rgba(0, 194, 168, 0.1) 0%,
+        rgba(0, 194, 168, 0) 50%
+      ),
+      linear-gradient(theme("colors.border") 1px, transparent 1px),
+      linear-gradient(90deg, theme("colors.border") 1px, transparent 1px);
+    background-size:
+      100% 100%,
+      100% 100%,
+      28px 28px,
+      28px 28px;
+    background-position:
+      center,
+      center,
+      center,
+      center;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
+
+@layer components {
+  /* Display headers ride tight and muscular. */
+  .font-heading {
+    font-family: theme("fontFamily.display");
+    font-weight: 800;
+    letter-spacing: theme("letterSpacing.tightest");
+  }
+  .font-subheading {
+    font-family: theme("fontFamily.display");
+    font-weight: 600;
+  }
+
+  /* The volt/teal "go" fill used on the primary action + active chip. */
+  .surface-accent {
+    background-image: theme("backgroundImage.accent-sweep");
+    color: theme("colors.accent-ink");
+  }
+}
+
+@layer utilities {
+  /* Slim, on-brand scrollbar for the message log. */
+  .scroll-cadence {
+    scrollbar-width: thin;
+    scrollbar-color: theme("colors.border-strong") transparent;
+  }
+  .scroll-cadence::-webkit-scrollbar {
+    width: 10px;
+  }
+  .scroll-cadence::-webkit-scrollbar-thumb {
+    background-color: theme("colors.border-strong");
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 999px;
+  }
+  .scroll-cadence::-webkit-scrollbar-thumb:hover {
+    background-color: theme("colors.text-muted");
+  }
+
+  /* Respect reduced-motion: kill the looping brand animations. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-pulse-dash,
+    .animate-tempo-bounce,
+    .animate-sheen,
+    .animate-rise-in {
+      animation: none !important;
+    }
+  }
+}
