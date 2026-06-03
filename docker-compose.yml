@@ -7,9 +7,11 @@ services:
       - "8000:8000"
     env_file:
       - ./backend/.env
+    environment:
+      - CADENCE_DB_PATH=/app/var/cadence_log.db
     volumes:
       - ./data:/app/data:ro
-      - cadence-db:/app
+      - cadence-db:/app/var
     develop:
       watch:
         - path: ./backend/app
