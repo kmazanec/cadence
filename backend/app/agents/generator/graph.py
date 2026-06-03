@@ -29,7 +29,12 @@ from app.agents.generator.build_workout import build_workout
 from app.agents.generator.output_gate import validate_workout
 from app.agents.generator.schemas import Prescription, WorkoutPayload
 from app.agents.generator.state import RETRY_CEILING, GeneratorState
-from app.agents.generator.tools import BuildWorkoutInput, SearchExercisesInput
+from app.agents.generator.tools import (
+    BuildWorkoutInput,
+    SearchExercisesInput,
+    build_workout_tool,
+    search_exercises_tool,
+)
 from app.data.repository import ExerciseRepository
 
 # ---------------------------------------------------------------------------
@@ -126,7 +131,10 @@ def _make_generate_node(repo: ExerciseRepository):
         model = _factory.get_model("generator")
 
         # Bind tools so the model knows the available tool signatures.
-        tools = [SearchExercisesInput, BuildWorkoutInput]
+        # Use the StructuredTool wrappers (not the bare Pydantic classes) so
+        # that LangChain serialises tool names as "search_exercises" and
+        # "build_workout" — matching the dispatch keys below.
+        tools = [search_exercises_tool, build_workout_tool]
         try:
             bound_model = model.bind_tools(tools)
         except (AttributeError, NotImplementedError):

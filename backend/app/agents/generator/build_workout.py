@@ -51,7 +51,14 @@ def build_workout(
                     f"(block={block_name!r})"
                 )
             if ex_id in prescription_map:
-                resolved.append(prescription_map[ex_id])
+                supplied = prescription_map[ex_id]
+                # If the supplied prescription omits both reps and duration it
+                # is incomplete; fall back to make_prescription so every
+                # exercise leaving this function has a concrete volume spec.
+                if supplied.reps is None and supplied.duration_seconds is None:
+                    resolved.append(make_prescription(ex))
+                else:
+                    resolved.append(supplied)
             else:
                 resolved.append(make_prescription(ex))
         return resolved

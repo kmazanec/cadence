@@ -150,3 +150,40 @@ def test_main_block_has_correct_exercise_count(payload) -> None:
 def test_cooldown_block_has_correct_exercise_count(payload) -> None:
     cooldown = next(b for b in payload.blocks if b.name == "cooldown")
     assert len(cooldown.exercises) == len(_COOLDOWN_IDS)
+
+
+# ---------------------------------------------------------------------------
+# Incomplete prescription fallback
+# ---------------------------------------------------------------------------
+
+
+def test_incomplete_prescription_falls_back_to_make_prescription(repo) -> None:
+    """A supplied prescription with both reps and duration_seconds None is
+    incomplete; build_workout must fall back to make_prescription so the
+    resulting exercise always has a concrete volume spec."""
+    from app.agents.generator.schemas import Prescription
+
+    # Supply a prescription with neither reps nor duration
+    incomplete = Prescription(
+        exercise_id=_MAIN_IDS[0],
+        name="Push-Up to Knee-Drive",
+        sets=3,
+        reps=None,
+        duration_seconds=None,
+        rest_seconds=60,
+    )
+    result = build_workout(
+        warmup_ids=[],
+        main_ids=[_MAIN_IDS[0]],
+        cooldown_ids=[],
+        repo=repo,
+        prescriptions=[incomplete],
+    )
+    main_block = next(b for b in result.blocks if b.name == "main")
+    assert len(main_block.exercises) == 1
+    p = main_block.exercises[0]
+    has_value = (p.reps is not None) or (p.duration_seconds is not None)
+    assert has_value, (
+        f"{p.name!r}: fallback from incomplete prescription left both reps and "
+        "duration_seconds as None"
+    )
