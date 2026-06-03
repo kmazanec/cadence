@@ -46,3 +46,9 @@ coach subgraph directly; F-02 wires real routing to it, but that's contract-medi
 None beyond F-01.
 
 ## Implementation notes (filled in by the building agent)
+
+- **Coach subgraph placement:** `graph.py` added to `backend/app/agents/coach/`; exports `COACH_SYSTEM_PROMPT` (module-level constant) so tests can assert voice-directive presence without invoking the model.
+- **Voice prompt construction:** The system prompt encodes each BRAND.md do/don't directive as a sentence — conversational/direct/confident/partnership/results-focused, never clinical/robotic/hedged/disclaimer-heavy. Tests assert substring presence from each group.
+- **Explanation note:** Emitted in `_coach_boundary_node` in `hub.py`, not in the subgraph itself, because `CoachState` carries no `explanation` field (HubState owns the explanation list). Uses `claim='note'`, `relation='name_match'` (frozen vocab), `subject='coach'`, `detail='answered by coach'`. Exactly one note per coach turn.
+- **Hub wiring:** `hub.py` reproduced in this branch (forked from contracts-only base); coach boundary and response-assembly nodes connect without change from the F-01 pattern. No new node names introduced.
+- **Live smoke test:** skipped unless `OPENROUTER_API_KEY` is set; asserts at least one primary deadlift muscle is mentioned. Never gates CI.
