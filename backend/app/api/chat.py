@@ -1,0 +1,97 @@
+"""The /chat SSE endpoint: drives the hub graph and streams events to the client.
+
+Token events originate from model-message deltas, filtered to the node
+producing the reply. Route, structured, and clarification events are read from
+committed graph state, never from message deltas — this is the safe pattern
+from ADR-002 that avoids tool-argument corruption.
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import AsyncIterator
+
+from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import AIMessageChunk
+
+from ..api.streaming import DoneEvent, ErrorEvent, RouteEvent, TokenEvent, encode_sse
+from ..graph.hub import build_hub
+from ..graph.state import HubState
+from .schemas import ChatRequest
+
+router = APIRouter()
+
+# One shared hub graph instance for the application lifetime.
+# The MemorySaver checkpointer inside keeps sessions isolated by thread_id.
+_hub = build_hub()
+
+
+async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
+    """Drive the hub graph and yield SSE-encoded frames.
+
+    Emits:
+    - ``route`` once the router node commits a route to state.
+    - ``token`` for each model message chunk (from the coach or future agents).
+    - ``done`` when the graph run completes.
+    - ``error`` if an unhandled exception escapes.
+    """
+    session_id = request.session_id or str(uuid.uuid4())
+    config = {"configurable": {"thread_id": session_id}}
+
+    initial: HubState = {
+        "session_id": session_id,
+        "messages": [],
+        "user_message": request.message,
+        "route": None,
+        "routing_confidence": None,
+        "routing_raw": None,
+        "subgraph_result": None,
+        "explanation": [],
+        "clarification": None,
+        "error": None,
+    }
+
+    try:
+        route_emitted = False
+
+        async for _ns, mode, data in _hub.astream(
+            initial, config, stream_mode=["messages", "updates"], subgraphs=True
+        ):
+            if mode == "messages":
+                msg, _meta = data
+                # Emit token events for AI message chunks with content.
+                if isinstance(msg, AIMessageChunk) and msg.content:
+                    yield encode_sse(TokenEvent(text=str(msg.content)))
+
+            elif mode == "updates":
+                # updates data is {node_name: node_output_dict}.
+                # Read route from the router node's output the first time it appears.
+                if not route_emitted and isinstance(data, dict):
+                    for _node, node_out in data.items():
+                        if isinstance(node_out, dict):
+                            route_val = node_out.get("route")
+                            if route_val is not None:
+                                yield encode_sse(RouteEvent(route=route_val))
+                                route_emitted = True
+                                break
+
+        yield encode_sse(DoneEvent())
+
+    except Exception as exc:  # noqa: BLE001
+        # Emit a sanitized error — no traceback, no internal detail.
+        yield encode_sse(ErrorEvent(message="Something went wrong — please try again."))
+        raise
+
+
+@router.post("/chat")
+async def chat(request: ChatRequest) -> StreamingResponse:
+    """Accept a chat message and stream the reply as Server-Sent Events."""
+    return StreamingResponse(
+        _stream_chat(request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
