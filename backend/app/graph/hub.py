@@ -21,8 +21,24 @@ from langgraph.graph import END, StateGraph
 
 from ..graph.explanation import Reason
 from ..graph.routing import Route, RoutingDecision, decide_route
-from ..graph.state import CoachResult, GeneratorResult, HubState
+from ..graph.state import CoachResult, GeneratorResult, HubState, WorkoutLogResult
 from ..models.factory import get_model
+
+
+# ---------------------------------------------------------------------------
+# Repository factory seam (overridable in tests)
+# ---------------------------------------------------------------------------
+
+
+def _get_log_repository_for_hub():
+    """Return the configured log repository for the hub's logger boundary.
+
+    Isolated into its own function so tests can monkeypatch it without touching
+    the production factory.
+    """
+    from ..data.log_repository import get_log_repository
+
+    return get_log_repository()
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +94,13 @@ async def _router_node(state: HubState) -> dict:
 
 def _route_edge(
     state: HubState,
-) -> Literal["coach_boundary", "generator_boundary", "clarify", "response_assembly"]:
+) -> Literal[
+    "coach_boundary",
+    "generator_boundary",
+    "logger_boundary",
+    "clarify",
+    "response_assembly",
+]:
     """Select the next node based on committed route state."""
     route = state.get("route")
     if route is Route.COACH:
@@ -86,8 +108,7 @@ def _route_edge(
     if route is Route.WORKOUT_GENERATE:
         return "generator_boundary"
     if route is Route.WORKOUT_LOG:
-        # Logger not yet wired — fall through to assembly.
-        return "response_assembly"
+        return "logger_boundary"
     # No route committed — a clarifying question was returned.
     return "clarify"
 
@@ -215,7 +236,58 @@ async def _generator_boundary_node(state: HubState) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Placeholder nodes for non-generator routes and clarification
+# Logger boundary adapter node
+# ---------------------------------------------------------------------------
+
+
+async def _logger_boundary_node(state: HubState) -> dict:
+    """Translate hub state into logger inputs, run the logger, and map the
+    result back onto HubState.
+
+    The logger is called with the session-keyed repositories so entries are
+    associated with the correct session. The hub and logger share no mutable key.
+    """
+    from ..agents.logger.graph import run_logger
+
+    session_id = state["session_id"]
+    log_repo = _get_log_repository_for_hub()
+
+    result: WorkoutLogResult = await run_logger(
+        user_message=state["user_message"],
+        session_id=session_id,
+        log_repo=log_repo,
+    )
+
+    # Emit explanation reasons for matched and unmatched entries.
+    reasons: list[Reason] = []
+    for entry in result.entries:
+        if not entry.unmatched and entry.exercise_id is not None:
+            reasons.append(
+                Reason(
+                    claim="matched",
+                    subject=entry.raw_name,
+                    relation="name_match",
+                    object=entry.exercise_id,
+                )
+            )
+        else:
+            reasons.append(
+                Reason(
+                    claim="note",
+                    subject=entry.raw_name,
+                    relation="name_match",
+                    detail="no catalogue match found",
+                )
+            )
+
+    return {
+        "subgraph_result": result,
+        "explanation": reasons,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Placeholder nodes for non-subgraph routes and clarification
 # ---------------------------------------------------------------------------
 
 
@@ -257,10 +329,11 @@ def build_hub() -> StateGraph:
     builder = StateGraph(HubState)
 
     builder.add_node("router", _router_node)
-    # The coach boundary node handles hub↔subgraph translation and is the
-    # unique node name that prevents MULTIPLE_SUBGRAPHS conflicts.
+    # The boundary nodes handle hub↔subgraph translation and have unique node
+    # names that prevent MULTIPLE_SUBGRAPHS conflicts.
     builder.add_node("coach_boundary", _coach_boundary_node)
     builder.add_node("generator_boundary", _generator_boundary_node)
+    builder.add_node("logger_boundary", _logger_boundary_node)
     builder.add_node("clarify", _clarify_node)
     builder.add_node("response_assembly", _response_assembly_node)
 
@@ -273,6 +346,7 @@ def build_hub() -> StateGraph:
         {
             "coach_boundary": "coach_boundary",
             "generator_boundary": "generator_boundary",
+            "logger_boundary": "logger_boundary",
             "clarify": "clarify",
             "response_assembly": "response_assembly",
         },
@@ -280,6 +354,7 @@ def build_hub() -> StateGraph:
 
     builder.add_edge("coach_boundary", "response_assembly")
     builder.add_edge("generator_boundary", "response_assembly")
+    builder.add_edge("logger_boundary", "response_assembly")
     builder.add_edge("clarify", "response_assembly")
     builder.add_edge("response_assembly", END)
 
