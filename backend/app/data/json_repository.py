@@ -35,15 +35,25 @@ class JsonExerciseRepository:
         movement_patterns: list[str] | None = None,
     ) -> list[Exercise]:
         wanted_muscles = _normalize(muscle_groups) if muscle_groups else None
-        wanted_equipment = _normalize(equipment) if equipment else None
+        # ``None`` means no equipment filter; a list (including empty) enforces
+        # subset-satisfiability: every item in the exercise's equipment_required
+        # must be present in the caller's available-equipment set. This ensures a
+        # returned exercise can actually be performed with what the user has.
+        available_equipment: set[str] | None = (
+            _normalize(equipment) if equipment is not None else None
+        )
         wanted_patterns = _normalize(movement_patterns) if movement_patterns else None
 
         results: list[Exercise] = []
         for ex in self._exercises:
             if wanted_muscles and not (wanted_muscles & _normalize(ex.muscle_groups)):
                 continue
-            if wanted_equipment and not (wanted_equipment & _normalize(ex.equipment_required)):
-                continue
+            if available_equipment is not None:
+                # Subset check: exercise is satisfiable iff all required equipment
+                # is in the available set. An empty required-set means bodyweight,
+                # which is always satisfiable.
+                if not _normalize(ex.equipment_required) <= available_equipment:
+                    continue
             if wanted_patterns and not (wanted_patterns & _normalize(ex.movement_patterns)):
                 continue
             results.append(ex)
