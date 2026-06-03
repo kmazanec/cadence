@@ -89,6 +89,65 @@ def test_repository_methods_are_total() -> None:
     assert repo.bilateral_pair("missing") is None
 
 
+# --- Injury / bilateral surface signatures -------------------------------
+
+
+def test_validate_workout_accepts_injuries_and_reports_contraindicated() -> None:
+    from app.agents.generator.output_gate import GateResult, validate_workout
+
+    repo = JsonExerciseRepository()
+    empty = WorkoutPayload(blocks=[])
+    # injuries defaults to None — existing callers keep working unchanged.
+    result = validate_workout(empty, repo)
+    assert isinstance(result, GateResult)
+    assert result.contraindicated_ids == set()
+    # Passing injuries is accepted and a clean payload still validates.
+    result_with_injury = validate_workout(empty, repo, injuries=["shoulder"])
+    assert result_with_injury.valid is True
+    assert result_with_injury.contraindicated_ids == set()
+
+
+def test_build_workout_accepts_injuries_param() -> None:
+    import inspect
+
+    from app.agents.generator.build_workout import build_workout
+
+    params = inspect.signature(build_workout).parameters
+    assert "injuries" in params
+    assert params["injuries"].default is None
+
+
+def test_execute_search_accepts_injuries_param() -> None:
+    import inspect
+
+    from app.agents.generator.graph import _execute_search
+
+    params = inspect.signature(_execute_search).parameters
+    assert "injuries" in params
+    assert params["injuries"].default is None
+
+
+def test_extract_injuries_is_total() -> None:
+    from app.agents.generator.injury_extraction import extract_injuries
+
+    result = extract_injuries("my shoulder hurts")
+    assert isinstance(result, list)
+    assert all(isinstance(term, str) for term in result)
+
+
+def test_reason_vocabulary_covers_injury_and_pairing() -> None:
+    # The closed vocabulary must admit the exclusion and pairing triples the
+    # generator boundary emits.
+    excluded = Reason(
+        claim="excluded", subject="Barbell Press", relation="loads_joint", object="shoulder"
+    )
+    added = Reason(
+        claim="added", subject="Single-Arm Row", relation="bilateral_pair_of", object="row-left"
+    )
+    assert excluded.claim == "excluded"
+    assert added.relation == "bilateral_pair_of"
+
+
 # --- Log repository ------------------------------------------------------
 
 

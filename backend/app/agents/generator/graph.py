@@ -61,8 +61,16 @@ def _tool_message(tool_call_id: str, content: str) -> ToolMessage:
     return ToolMessage(tool_call_id=tool_call_id, content=content)
 
 
-def _execute_search(args: dict, repo: ExerciseRepository) -> str:
-    """Execute search_exercises and return a JSON string of results."""
+def _execute_search(
+    args: dict,
+    repo: ExerciseRepository,
+    injuries: list[str] | None = None,
+) -> str:
+    """Execute search_exercises and return a JSON string of results.
+
+    When *injuries* is supplied, contraindicated exercises are dropped from the
+    results before serialising so the model never sees an unsafe option.
+    """
     try:
         params = SearchExercisesInput.model_validate(args)
     except Exception as exc:
@@ -73,6 +81,9 @@ def _execute_search(args: dict, repo: ExerciseRepository) -> str:
         equipment=params.equipment,
         movement_patterns=params.movement_patterns,
     )
+    if injuries:
+        blocked = repo.contraindicated_ids(injuries)
+        results = [ex for ex in results if ex.id not in blocked]
     return json.dumps([
         {
             "id": ex.id,

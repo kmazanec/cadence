@@ -24,6 +24,7 @@ def build_workout(
     cooldown_ids: list[str],
     repo: ExerciseRepository,
     prescriptions: list[Prescription] | None = None,
+    injuries: list[str] | None = None,
 ) -> WorkoutPayload:
     """Assemble a WorkoutPayload from three ordered lists of exercise IDs.
 

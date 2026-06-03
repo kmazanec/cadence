@@ -168,14 +168,17 @@ async def _generator_boundary_node(state: HubState) -> dict:
     the closed relation vocabulary (matches_target and equipment_match).
     """
     from ..agents.generator.graph import build_generator_subgraph
+    from ..agents.generator.injury_extraction import extract_injuries
     from ..data.json_repository import JsonExerciseRepository
 
     repo = JsonExerciseRepository()
     generator = build_generator_subgraph(repo=repo)
 
+    injuries = extract_injuries(state["user_message"])
+
     generator_input = {
         "user_message": state["user_message"],
-        "injuries": [],
+        "injuries": injuries,
         "targets": [],
         "workout": None,
         "selected_exercise_ids": [],
@@ -214,6 +217,22 @@ async def _generator_boundary_node(state: HubState) -> dict:
                             object=eq,
                         )
                     )
+
+    # Explain injury-driven exclusions: any exercise withheld because it loads
+    # an injured joint is surfaced with the closed exclusion vocabulary.
+    for ex_id in repo.contraindicated_ids(injuries):
+        excluded = repo.get_by_id(ex_id)
+        if excluded is None:
+            continue
+        for joint in excluded.joints_loaded:
+            reasons.append(
+                Reason(
+                    claim="excluded",
+                    subject=excluded.name,
+                    relation="loads_joint",
+                    object=joint,
+                )
+            )
 
     if workout is None:
         # Generator exhausted retries — graceful empty result.

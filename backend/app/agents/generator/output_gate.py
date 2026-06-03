@@ -24,20 +24,29 @@ class GateResult:
     """Outcome of the output-validation gate.
 
     ``valid`` is True iff every exercise_id in the payload resolves in the
-    repository. ``unknown_ids`` carries any IDs that failed resolution so the
-    caller can log or report them.
+    repository and none of them is contraindicated for the active injuries.
+    ``unknown_ids`` carries any IDs that failed resolution and
+    ``contraindicated_ids`` any IDs excluded by injury, so the caller can log
+    or report each failure mode.
     """
 
     valid: bool
     unknown_ids: set[str] = field(default_factory=set)
+    contraindicated_ids: set[str] = field(default_factory=set)
 
 
-def validate_workout(payload: WorkoutPayload, repo: ExerciseRepository) -> GateResult:
-    """Check that every exercise_id in *payload* exists in *repo*.
+def validate_workout(
+    payload: WorkoutPayload,
+    repo: ExerciseRepository,
+    injuries: list[str] | None = None,
+) -> GateResult:
+    """Check that every exercise_id in *payload* exists in *repo* and is allowed.
 
     Iterates all blocks and all prescriptions. Returns immediately with the full
     set of unknown IDs rather than short-circuiting on the first failure, so a
-    single pass gives the complete picture for logging and recovery.
+    single pass gives the complete picture for logging and recovery. When
+    *injuries* is supplied, any contraindicated exercise present in the payload
+    is reported and fails the gate.
     """
     unknown: set[str] = set()
 
@@ -46,4 +55,16 @@ def validate_workout(payload: WorkoutPayload, repo: ExerciseRepository) -> GateR
             if repo.get_by_id(prescription.exercise_id) is None:
                 unknown.add(prescription.exercise_id)
 
-    return GateResult(valid=len(unknown) == 0, unknown_ids=unknown)
+    blocked = repo.contraindicated_ids(injuries) if injuries else set()
+    present_ids = {
+        prescription.exercise_id
+        for block in payload.blocks
+        for prescription in block.exercises
+    }
+    contraindicated = blocked & present_ids
+
+    return GateResult(
+        valid=len(unknown) == 0 and len(contraindicated) == 0,
+        unknown_ids=unknown,
+        contraindicated_ids=contraindicated,
+    )
