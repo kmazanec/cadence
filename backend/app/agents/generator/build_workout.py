@@ -33,6 +33,9 @@ def build_workout(
     per-exercise overrides keyed by ``exercise_id``; any ID without a matching
     prescription falls back to :func:`make_prescription`.
 
+    When *injuries* is supplied, the bilateral auto-pairing step skips any
+    partner that is contraindicated, so exclusion wins over pairing.
+
     The returned payload has exactly three blocks in warmup → main → cooldown
     order.
     """
@@ -42,8 +45,15 @@ def build_workout(
         for p in prescriptions:
             prescription_map[p.exercise_id] = p
 
+    # Contraindicated ID set for partner-skip check during bilateral pairing.
+    blocked: set[str] = repo.contraindicated_ids(injuries) if injuries else set()
+
     def _resolve(ids: list[str], block_name: str) -> list[Prescription]:
         resolved: list[Prescription] = []
+        # Track the IDs already in this block to avoid duplicates when the
+        # model supplied both sides of a bilateral pair explicitly.
+        seen: set[str] = set(ids)
+
         for ex_id in ids:
             ex: Exercise | None = repo.get_by_id(ex_id)
             if ex is None:
@@ -62,6 +72,19 @@ def build_workout(
                     resolved.append(supplied)
             else:
                 resolved.append(make_prescription(ex))
+
+            # Bilateral auto-pairing: when the source has a resolvable partner
+            # and that partner is not already in the block and not contraindicated,
+            # include it immediately after the source in the same block.
+            partner: Exercise | None = repo.bilateral_pair(ex_id)
+            if (
+                partner is not None
+                and partner.id not in seen
+                and partner.id not in blocked
+            ):
+                seen.add(partner.id)
+                resolved.append(make_prescription(partner))
+
         return resolved
 
     return WorkoutPayload(
