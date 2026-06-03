@@ -121,10 +121,19 @@ export function renderThinking(buffers: ThinkingBuffers): string[] {
     lines.push(rationale.trim());
   }
 
+  // Subagent prose passes through, but some subagents (the logger) stream their
+  // structured payload as "thinking" tokens — that data already renders as a
+  // card, and the UI must NEVER show raw JSON. So suppress an agent buffer that
+  // reads as JSON (starts with `{` or `[`) rather than prose.
   const agent = buffers.agent.trim();
-  if (agent.length > 0) {
+  if (agent.length > 0 && !looksLikeJson(agent)) {
     lines.push(agent);
   }
 
   return lines;
+}
+
+/** True when the text reads as a JSON value/stream rather than prose. */
+function looksLikeJson(text: string): boolean {
+  return text.startsWith("{") || text.startsWith("[");
 }

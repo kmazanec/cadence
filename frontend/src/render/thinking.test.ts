@@ -69,6 +69,19 @@ describe("renderThinking", () => {
     expect(lines).toContain("Selecting exercises that fit dumbbells.");
   });
 
+  it("suppresses a subagent buffer that streams raw JSON (e.g. the logger)", () => {
+    // The logger streams its structured payload as 'thinking' tokens; that data
+    // renders as a card, so it must not leak into the thinking trace as JSON.
+    let b = emptyThinkingBuffers();
+    b = appendThinking(
+      b,
+      "log",
+      '{"entries":[{"raw_name":"bench press","sets":3}]}{"pick":1}',
+    );
+    const lines = renderThinking(b);
+    expect(lines.join("\n")).not.toMatch(/[{}[\]]/);
+  });
+
   it("shows a holding line before the route field finishes streaming", () => {
     let b = emptyThinkingBuffers();
     b = appendThinking(b, "router", '{"rou');
