@@ -9,6 +9,14 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+# Load .env before any model config reads env vars.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv is optional; env vars may be set by the shell/container
+
 from .api.chat import router as chat_router
 from .models.registry import validate_model_config
 
