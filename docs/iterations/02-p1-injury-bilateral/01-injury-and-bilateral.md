@@ -1,6 +1,6 @@
 # Feature: Injury avoidance + bilateral pairing (P1)
 
-**ID:** F-07 · **Iteration:** 02-p1-injury-bilateral · **Status:** Not started
+**ID:** F-07 · **Iteration:** 02-p1-injury-bilateral · **Status:** Done
 
 ## What this delivers (before → after)
 **Before:** The generator ignores injuries and trains only one side of unilateral exercises.
@@ -60,6 +60,33 @@ None.
   `data/exercises.json`.** Make any real-dataset AC #2 assertion conditional/skip with a
   recorded rationale, since no real pair resolves. The auto-pairing CODE path must still
   be fully exercised by the fixture.
+
+### Build decisions (recorded 2026-06-02)
+
+- **Injury extraction synonym map:** Implemented as a deterministic keyword/substring
+  scan over 9 canonical joints from the dataset vocabulary. `"sprain"` alone was too
+  broad (matches "MCL sprain" as ankle); tightened to `"ankle sprain"` to avoid false
+  positives. `sorted()` on the result ensures deterministic ordering.
+
+- **Bilateral pair reason detection in hub:** The hub boundary node tracks which IDs the
+  model submitted in `build_workout` via `selected_exercise_ids` (before bilateral
+  auto-pairing). Any exercise_id present in the final workout but absent from
+  `selected_exercise_ids` was added by bilateral pairing and receives a
+  `claim='added', relation='bilateral_pair_of'` reason. This avoids needing to thread
+  a separate `added_pair_ids` field through GeneratorState.
+
+- **`extract_injuries` and `JsonExerciseRepository` moved to module-level imports in
+  hub.py:** Previously they were lazy local imports inside the function body. Moving
+  them to module level allows tests to monkeypatch `app.graph.hub.extract_injuries` and
+  `app.graph.hub.JsonExerciseRepository` via the standard attribute replacement path.
+
+- **`_execute_build_workout` injuries threading:** Added `injuries` parameter so the
+  bilateral pairing logic in `build_workout` can skip contraindicated partners. The
+  `_make_generate_node` closure reads `injuries` from state once and passes it to both
+  `_execute_search` and `_execute_build_workout` — consistent with ADR-009 hard filter.
+
+- **Full suite result:** 225 passed, 4 skipped (pre-existing skips, not related to this
+  feature), 3 warnings (pre-existing). All new tests green.
 
 <!-- BUILD-PLAN:kmaz-plan-iteration -->
 
@@ -122,37 +149,37 @@ F-07 is wiring + reasons + tests, not new infrastructure: the repo methods (cont
 
 ### Build steps (checkbox)
 
-- [ ] **1.** Resolve the dangling-pair open question with the human: confirm approach (a) synthetic fixture repo for the bilateral path + conditional/rationale on AC#2, vs (b) patch reciprocal links into exercises.json. Record the decision in the spec's Implementation notes before writing pairing tests.
+- [x] **1.** Resolve the dangling-pair open question with the human: confirm approach (a) synthetic fixture repo for the bilateral path + conditional/rationale on AC#2, vs (b) patch reciprocal links into exercises.json. Record the decision in the spec's Implementation notes before writing pairing tests.
   - Files: `docs/iterations/02-p1-injury-bilateral/01-injury-and-bilateral.md`
   - Verify: Decision recorded; no code yet. Gates step 6/7.
-- [ ] **2.** Write the critical-path test FIRST (ADR-018 #2, deterministic, no LLM): given injuries=['knee'], run build_generator_subgraph with the sequential fake whose canned build_workout call deliberately includes a knee-loading id; assert the final state['workout'] contains ZERO exercises whose joints_loaded includes 'knee'. Include a written rationale docstring per ADR-018.
+- [x] **2.** Write the critical-path test FIRST (ADR-018 #2, deterministic, no LLM): given injuries=['knee'], run build_generator_subgraph with the sequential fake whose canned build_workout call deliberately includes a knee-loading id; assert the final state['workout'] contains ZERO exercises whose joints_loaded includes 'knee'. Include a written rationale docstring per ADR-018.
   - Files: `backend/tests/critical/test_injury_hard_exclusion.py`
   - Verify: uv run pytest tests/critical/test_injury_hard_exclusion.py -k knee — RED before impl, GREEN after steps 4-5. This is the gating safety test.
-- [ ] **3.** Write unit tests for the repo methods against an in-memory fixture: contraindicated_ids({'knee'}) equals exactly the set of knee-loading ids (compute expected from the dataset); contraindicated_ids([]) == set(); case-insensitive ('Knee'). For bilateral_pair, use a synthetic fixture repo with one resolvable reciprocal pair (per step-1 decision) and assert it returns the partner, and returns None for a dangling/absent id.
+- [x] **3.** Write unit tests for the repo methods against an in-memory fixture: contraindicated_ids({'knee'}) equals exactly the set of knee-loading ids (compute expected from the dataset); contraindicated_ids([]) == set(); case-insensitive ('Knee'). For bilateral_pair, use a synthetic fixture repo with one resolvable reciprocal pair (per step-1 decision) and assert it returns the partner, and returns None for a dangling/absent id.
   - Files: `backend/tests/unit/test_contraindication.py`, `backend/tests/unit/test_bilateral_pair.py`
   - Verify: uv run pytest tests/unit/test_contraindication.py tests/unit/test_bilateral_pair.py — GREEN (these test already-implemented methods; they lock behavior, esp. the dangling-pair None case).
-- [ ] **4.** Add a deterministic injury-extraction helper (pure function: user_message -> list[str] of normalized joints) with a small synonym/normalization map over the known joint vocab (knee/hip/shoulder/ankle/elbow/wrist/spine synonyms). Unit-test it (e.g. 'my knee hurts' -> ['knee']; 'no injuries' -> []).
+- [x] **4.** Add a deterministic injury-extraction helper (pure function: user_message -> list[str] of normalized joints) with a small synonym/normalization map over the known joint vocab (knee/hip/shoulder/ankle/elbow/wrist/spine synonyms). Unit-test it (e.g. 'my knee hurts' -> ['knee']; 'no injuries' -> []).
   - Files: `backend/app/agents/generator/injury_extraction.py`, `backend/tests/unit/test_injury_extraction.py`
   - Verify: uv run pytest tests/unit/test_injury_extraction.py — GREEN; helper is deterministic, no get_model call.
-- [ ] **5.** Apply the hard pre-filter in the candidate path: in _execute_search (graph.py), drop any result whose id is in repo.contraindicated_ids(state injuries). Thread the injuries from GeneratorState into _make_generate_node so the search filter and tool loop can see them.
+- [x] **5.** Apply the hard pre-filter in the candidate path: in _execute_search (graph.py), drop any result whose id is in repo.contraindicated_ids(state injuries). Thread the injuries from GeneratorState into _make_generate_node so the search filter and tool loop can see them.
   - Files: `backend/app/agents/generator/graph.py`
   - Verify: New subgraph test: with injuries=['knee'], search results returned to the model contain no knee-loading id. Critical-path test (step 2) still relies on the gate too.
-- [ ] **6.** Extend the output gate: validate_workout(payload, repo, injuries) (or a sibling check) fails when any prescription id is in contraindicated_ids(injuries); reuse GateResult/unknown_ids-style plumbing (add contraindicated_ids field). Wire the gate node to pass injuries through. This is the defense-in-depth layer that makes the step-2 critical-path test pass even if a contraindicated id reaches build.
+- [x] **6.** Extend the output gate: validate_workout(payload, repo, injuries) (or a sibling check) fails when any prescription id is in contraindicated_ids(injuries); reuse GateResult/unknown_ids-style plumbing (add contraindicated_ids field). Wire the gate node to pass injuries through. This is the defense-in-depth layer that makes the step-2 critical-path test pass even if a contraindicated id reaches build.
   - Files: `backend/app/agents/generator/output_gate.py`, `backend/app/agents/generator/graph.py`
   - Verify: uv run pytest tests/critical/test_injury_hard_exclusion.py — now GREEN; add a gate unit test feeding a knee-loading id under injuries=['knee'] -> GateResult.valid is False.
-- [ ] **7.** Implement bilateral auto-pairing in build_workout: after resolving each block, for any selected unilateral exercise with a resolvable bilateral_pair, also include the partner in the SAME block IF the partner is not already selected AND not contraindicated under the current injuries. Pass injuries (or the contraindicated set) into build_workout. Guard against duplicates and dangling pairs (skip when bilateral_pair returns None).
+- [x] **7.** Implement bilateral auto-pairing in build_workout: after resolving each block, for any selected unilateral exercise with a resolvable bilateral_pair, also include the partner in the SAME block IF the partner is not already selected AND not contraindicated under the current injuries. Pass injuries (or the contraindicated set) into build_workout. Guard against duplicates and dangling pairs (skip when bilateral_pair returns None).
   - Files: `backend/app/agents/generator/build_workout.py`, `backend/app/agents/generator/graph.py`
   - Verify: uv run pytest tests/integration/test_bilateral_pairing.py — selecting a unilateral exercise (synthetic fixture w/ resolvable pair per step 1) yields both sides; a contraindicated partner is NOT auto-added.
-- [ ] **8.** Wire injuries end-to-end in the generator boundary node: replace hardcoded injuries=[] (hub.py:178) with the extracted injuries from user_message via the step-4 helper.
+- [x] **8.** Wire injuries end-to-end in the generator boundary node: replace hardcoded injuries=[] (hub.py:178) with the extracted injuries from user_message via the step-4 helper.
   - Files: `backend/app/graph/hub.py`
   - Verify: Existing hub/generator integration tests still pass; a new test asserts a 'knee injury' message produces a knee-free workout through the hub.
-- [ ] **9.** Emit exclusion + pairing Reasons in the boundary node: for each id in contraindicated_ids(injuries) that is relevant, append Reason(claim='excluded', subject=name, relation='loads_joint', object='knee'); for each auto-added partner detected in the workout, append Reason(claim='added', subject=partner.name, relation='bilateral_pair_of', object=source.name). Append alongside the existing matches_target/equipment_match reasons.
+- [x] **9.** Emit exclusion + pairing Reasons in the boundary node: for each id in contraindicated_ids(injuries) that is relevant, append Reason(claim='excluded', subject=name, relation='loads_joint', object='knee'); for each auto-added partner detected in the workout, append Reason(claim='added', subject=partner.name, relation='bilateral_pair_of', object=source.name). Append alongside the existing matches_target/equipment_match reasons.
   - Files: `backend/app/graph/hub.py`
   - Verify: Test asserts response.explanation contains an 'excluded'/'loads_joint' reason for a knee request and an 'added'/'bilateral_pair_of' reason when a pair is auto-included (synthetic fixture).
-- [ ] **10.** Add the over-exclusion graceful-recovery test (AC #3): with an over-broad injury set, assert the generator recovers gracefully (honest gap reply, no contraindicated/fabricated padding) rather than crashing or padding. Coordinate ownership with ADR-018 #3 so it isn't duplicated.
+- [x] **10.** Add the over-exclusion graceful-recovery test (AC #3): with an over-broad injury set, assert the generator recovers gracefully (honest gap reply, no contraindicated/fabricated padding) rather than crashing or padding. Coordinate ownership with ADR-018 #3 so it isn't duplicated.
   - Files: `backend/tests/integration/test_injury_over_exclusion_recovery.py`
   - Verify: uv run pytest tests/integration/test_injury_over_exclusion_recovery.py — graceful path, workout is None or honestly thin, zero contraindicated ids.
-- [ ] **11.** Run the full backend suite to confirm no regression in router/generator/logger wiring (schema-aware fake seam intact).
+- [x] **11.** Run the full backend suite to confirm no regression in router/generator/logger wiring (schema-aware fake seam intact).
   - Files: _(no file change)_
   - Verify: uv run pytest — all green; ADR-018 #1 router tests unaffected by the new injury wiring.
 
