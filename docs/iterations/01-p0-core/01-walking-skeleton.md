@@ -78,3 +78,36 @@ None — can start immediately.
 - Eyedropper pass against live future.co to confirm the accent hex token (human visual check).
 
 ## Implementation notes (filled in by the building agent)
+
+### Subgraph boundary adapter pattern
+
+The coach subgraph (`app/agents/coach/graph.py`) is called from a boundary
+node (`coach_boundary`) inside the hub rather than embedded as a compiled
+subgraph node. This avoids LangGraph's output-key-merge conflict when the
+child state (`CoachState.answer`) has no corresponding field in `HubState`. The
+boundary node translates HubState → CoachState input, calls `coach.ainvoke()`,
+then wraps the answer in `CoachResult` before writing back to HubState.
+
+### Streaming token path
+
+The SSE emitter uses `graph.astream(..., stream_mode=["messages","updates"], subgraphs=True)`.
+With `subgraphs=True`, each yielded item is a `(namespace, mode, data)` 3-tuple.
+Token chunks (`AIMessageChunk`) arrive in the `messages` mode from the coach
+boundary's internal model call; the route event is read from the `updates` mode
+when the router node commits its output. This satisfies ADR-002: route/structured
+events come from committed state, never from message deltas.
+
+### Model injection seam
+
+`app/models/factory.py` exports `get_model`; the coach graph imports the module
+(not the function) so monkeypatching `app.models.factory.get_model` in tests
+affects the running agent. All 35 backend tests run without a network call.
+
+### Acceptance criteria status
+
+1. docker compose up → http://localhost:5173 (verified: Vite dev server + backend start)
+2. Streaming SSE reply rendered token-by-token (verified: 166 token events for a real question)
+3. LangGraph hub with typed state, explicit edges, and coach_boundary unique node name (verified by test)
+4. Boots with fake model/no key (35 tests, no network); fails fast with bad model config (test)
+5. Route/structured events sourced from committed state updates, not message deltas (see emitter)
+6. Changing MODEL_CONFIG dict changes the model without code change (architecture, not test-verified)
