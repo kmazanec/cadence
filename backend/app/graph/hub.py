@@ -29,6 +29,7 @@ from ..graph.routing import (
     RoutingDecision,
     decide_route,
 )
+from ..voice import GENERATOR_FAILURE_MESSAGE, clarification_fallback
 from ..graph.state import CoachResult, GeneratorResult, HubState, WorkoutLogResult
 from ..models.config import MODEL_CONFIG
 from ..models.factory import get_model
@@ -296,10 +297,7 @@ async def _generator_boundary_node(state: HubState) -> dict:
     if workout is None:
         # Generator exhausted retries — graceful empty result.
         result = None
-        reply_ai_msg = AIMessage(
-            content="I wasn't able to build a workout for that request. "
-            "Try widening the equipment or muscle group selection."
-        )
+        reply_ai_msg = AIMessage(content=GENERATOR_FAILURE_MESSAGE)
         return {
             "subgraph_result": result,
             "explanation": reasons,
@@ -385,12 +383,7 @@ async def _logger_boundary_node(state: HubState) -> dict:
 
 async def _clarify_node(state: HubState) -> dict:
     """Emit a clarification prompt when routing confidence is too low."""
-    from ..graph.routing import ClarificationPrompt
-
-    clarification = state.get("clarification") or ClarificationPrompt(
-        question="Could you tell me more about what you'd like to do?",
-        options=["Ask a fitness question", "Build me a workout", "Log a workout I did"],
-    )
+    clarification = state.get("clarification") or clarification_fallback()
     return {"clarification": clarification}
 
 

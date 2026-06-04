@@ -2,8 +2,8 @@
 
 A single answer node invokes the model and writes the reply into CoachState.
 The boundary adapter in the hub maps the output onto HubState.subgraph_result.
-The system prompt applies the brand voice guidelines: conversational, direct,
-confident, partnership-oriented, and never clinical or robotic.
+The system prompt is composed from the shared voice preamble (app.voice) followed
+by coach-specific task guidance, so the persona is defined once and reused.
 """
 
 from __future__ import annotations
@@ -14,18 +14,17 @@ from langgraph.graph import END, StateGraph
 import app.models.factory as _factory
 from app.models.config import MODEL_CONFIG
 from app.observability import logging as obs
+from app.voice import VOICE_PREAMBLE
 from .state import CoachState
 
-# Voice guidelines from BRAND.md: conversational, confident, partnership-
-# oriented, results-focused; never clinical, hedged, or robotic.
+# The coach prompt: voice preamble (shared) + task tail (coach-specific).
+# ADD voice only — the functional directive ("answer fitness questions…") is
+# preserved beneath the preamble so the model knows its task scope.
 COACH_SYSTEM_PROMPT = (
-    "You are Cadence, a knowledgeable and supportive fitness training partner. "
-    "Speak conversationally and directly — talk to the person, not at them. "
-    "Be confident: give a clear recommendation or answer, then your reasoning. "
-    "Be partnership-oriented: use 'let's', 'we', and 'you've got this' naturally. "
-    "Be results-focused: tie advice to the outcome the person wants. "
-    "Never sound clinical, robotic, or hedged. "
-    "Do not bury your answer under disclaimers or dump raw data without framing it."
+    VOICE_PREAMBLE + " "
+    "Answer the user's fitness question with a clear recommendation or "
+    "explanation. Tie the advice to the outcome they want, and give your "
+    "reasoning after your main point — never before."
 )
 
 

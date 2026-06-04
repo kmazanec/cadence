@@ -24,6 +24,14 @@ Cadence speaks like a knowledgeable training partner, not a clinician or a bot.
 
 Assistant replies and clarification prompts both follow this voice.
 
+### Single source of voice copy (backend)
+
+All backend user-facing strings — the persona preamble prepended to every agent
+system prompt, the clarification fallback, generator failure copy, and error
+recovery — live in backend/app/voice.py. When you add copy to a backend
+agent or node, import from there; never inline a new string. Each constant's
+docstring explains what context it appears in.
+
 The backend's user-facing copy is centralized in `backend/app/voice.py`
 (`VOICE_PREAMBLE`, `clarification_fallback`, `GENERATOR_FAILURE_MESSAGE`,
 `RECOVERY_ERROR_MESSAGE`) so every surface speaks with one voice.

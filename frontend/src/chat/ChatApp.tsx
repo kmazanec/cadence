@@ -95,7 +95,7 @@ export default function ChatApp() {
             if (last && last.role === "assistant") {
               next[next.length - 1] = {
                 ...last,
-                content: "Something went wrong — please try again.",
+                content: "Something tripped up on my end — give it another go and we'll pick up right where we left off.",
                 isStreaming: false,
               };
             }
@@ -127,7 +127,7 @@ export default function ChatApp() {
           {messages.length === 0 && (
             <div className="text-center py-16">
               <p className="text-text-secondary text-body">
-                Ask a fitness question, request a workout, or log what you did.
+                What are we working on today? Ask a question, build a workout, or log a session.
               </p>
             </div>
           )}
@@ -196,7 +196,7 @@ export default function ChatApp() {
 
                   {/* Bare placeholder before anything has streamed in. */}
                   {isEmpty && msg.isStreaming && (
-                    <span className="text-text-secondary text-sm">Thinking…</span>
+                    <span className="text-text-secondary text-sm">On it…</span>
                   )}
                 </div>
               </div>
