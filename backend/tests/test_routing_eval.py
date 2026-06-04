@@ -108,11 +108,11 @@ async def test_run_eval_per_result_shape(fake_get_model) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ambiguous_cases_always_score_correct(fake_get_model) -> None:
-    """Ambiguous cases score as correct regardless of what the model returns."""
+async def test_ambiguous_cases_score_correct_when_model_clarifies(fake_get_model) -> None:
+    """Ambiguous cases score correct when the model clarifies (route is None)."""
     from tests.conftest import FakeStructuredOutputModel
 
-    # Model returns low confidence so decide_route triggers clarification.
+    # Model returns low confidence so decide_route triggers clarification (route=None).
     fake_model = FakeStructuredOutputModel(
         parsed_result=RoutingDecision(
             route=Route.COACH,
@@ -127,7 +127,7 @@ async def test_ambiguous_cases_always_score_correct(fake_get_model) -> None:
     report = await run_eval(fake_model, cases=ambiguous_cases)
     for result in report["results"]:  # type: ignore[union-attr]
         assert result["correct"] is True, (
-            f"Ambiguous case should always be correct; got {result}"
+            f"Ambiguous case should be correct when model clarifies; got {result}"
         )
 
 
@@ -183,11 +183,11 @@ def test_case_set_has_minimum_coverage() -> None:
     assert Route.WORKOUT_GENERATE in routes_covered
     assert Route.WORKOUT_LOG in routes_covered
     ambiguous = [c for c in CASES if c.ambiguous]
-    assert len(ambiguous) >= 1, "Need at least one ambiguous case (AC-2)"
+    assert len(ambiguous) >= 1, "Need at least one ambiguous case"
 
 
 def test_case_set_has_at_least_10_cases() -> None:
-    """The case set has at least 10 entries (AC-1: ~10–15 labeled cases)."""
+    """The case set has at least 10 entries (~10–15 labeled cases)."""
     assert len(CASES) >= 10, f"Expected ≥10 cases, got {len(CASES)}"
 
 

@@ -5,11 +5,10 @@ Each case captures:
 - ``expected_route``: the ``Route`` the classifier must emit above the confidence
   threshold; ``None`` for cases where a clarification is the correct outcome.
 - ``ambiguous``: when ``True`` the case tests the clarify-not-dispatch path.
-  The harness scores an ambiguous case as correct when the classifier either
-  returns ``None`` (below-threshold) or uses the expected route.
+  The harness scores an ambiguous case as correct when the classifier returns
+  ``None`` (i.e. decide_route triggered clarification, not dispatch).
 
-Covers the three route types with both clear-intent and ambiguous turns, as
-required by acceptance criteria AC-2.
+Covers the three route types with both clear-intent and ambiguous turns.
 """
 
 from __future__ import annotations
