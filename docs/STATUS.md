@@ -28,7 +28,7 @@ to exercise pairing on live data.
 | 01 | P0 core (skeleton + router + 3 agents + resilience/tests) | **Shipped** | All six features (F-01..F-06) merged to `main` via FF through PR #1. Backend 159 passed / 4 live-skipped, frontend 15 passed. |
 | 02 | P1 (injury avoidance + bilateral pairing) | **Shipped — merged** | F-07 shipped: all 4 AC met, 233 passed / 4 skipped. Landed on `main` via FF (PR #3). |
 | 03 | P2 (multi-turn memory + observability) | **Shipped — merged** | F-08 (multi-turn memory) and F-09 (structured observability) both shipped. 7 session-memory tests + 18 observability tests passed. Rebased onto 02, landed on `main` via FF (PR #2). |
-| 04 | Stretch (eval harness + "why these?" panel + coach voice) | Not started | Cut first under time pressure. F-11 needs F-07 (iteration 02). |
+| 04 | Stretch (eval harness + "why these?" panel + coach voice) | **Approved — building** | F-10/F-11/F-12 (`BUILD-PLAN-04-stretch.md`, approved 2026-06-04). All deps present (F-07 shipped, so F-11 unblocked). Three independent `sonnet` features; F-11 owns the only frozen-contract change (one additive SSE variant). |
 
 ## What's next
 
