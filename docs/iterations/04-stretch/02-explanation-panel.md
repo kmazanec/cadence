@@ -40,4 +40,39 @@ Req 17 (committed stretch); previews §10 M5 explainability.
 ## Manual setup required
 None.
 
-## Implementation notes (filled in by the building agent)
+## Implementation notes
+
+### Transport
+`chat.py` emits `ExplanationEvent(reasons=response.explanation)` immediately after `StructuredEvent`,
+gated on `if response.explanation`. The gate means coach and log turns emit nothing — graceful
+degradation at the source, not the receiver. `assemble_response` already set `explanation` from
+`state["explanation"]`; no hub change needed.
+
+### Humanizer (`explanationLines.ts`)
+Groups by `(claim, relation)`, collects distinct `object` values per group, emits one line per
+group in priority order: excluded/loads_joint → added/bilateral_pair_of → included/matches_target
+→ included/equipment_match. `note` reasons are silently skipped (coach-internal). Reasons with
+`object: null` are also skipped. The dedupe step prevents the per-muscle/per-equipment explosion
+(30+ triples for a 6-exercise workout) from flooding the panel.
+
+### Panel (`ExplanationPanel.tsx`)
+Native `<details>/<summary>` — zero JS state, correct semantic disclosure. `not open` by default
+per spec. Returns `null` when `explanationLines` is empty, hiding the panel on non-workout turns.
+Brand tokens: `bg-surface-sunken`, `text-accent-deep`, `font-subheading`, `rounded-button`,
+`border-border`.
+
+### Wiring
+`ChatState.explanation: Reason[]` (default `[]`) accumulates the payload. `reduceSSE`
+`case "explanation"` stores it. `ChatApp` threads it onto `Message.explanation`, passes it to
+`WorkoutCardView` as the `reasons` prop. `WorkoutCardView.reasons` defaults to `[]` so existing
+callers are unaffected.
+
+### Tests
+- 3 backend SSE transport tests (`test_explanation_stream.py`): event emitted on workout turn with
+  reasons, not emitted on coach turn, appears before `done`.
+- 9 humanizer unit tests (`explanationLines.test.ts`): empty, note-only, each claim type,
+  many-to-one collapse, cross-type, null-object safety.
+- 8 panel component tests (`ExplanationPanel.test.tsx`): renders nothing when empty/note-only,
+  `<details>` collapsed by default, each reason type, `<summary>` with "Why these?".
+- Dispatch tests updated: `explanation` event handled, `initialChatState` has `[]`.
+- 2 ChatApp integration tests: explanation panel appears on workout turn; absent on coach turn.

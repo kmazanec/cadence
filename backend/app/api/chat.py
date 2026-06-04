@@ -21,6 +21,7 @@ from ..api.streaming import (
     ClarificationEvent,
     DoneEvent,
     ErrorEvent,
+    ExplanationEvent,
     RouteEvent,
     StructuredEvent,
     ThinkingEvent,
@@ -149,6 +150,11 @@ async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
         response = assemble_response(cast(HubState, snapshot.values))
         if response.structured is not None:
             yield encode_sse(StructuredEvent(payload=response.structured))
+
+        # Emit the explanation payload on workout turns that produced reasons.
+        # Coach and log turns produce no reasons, so the gate keeps them silent.
+        if response.explanation:
+            yield encode_sse(ExplanationEvent(reasons=response.explanation))
 
         yield encode_sse(DoneEvent())
 

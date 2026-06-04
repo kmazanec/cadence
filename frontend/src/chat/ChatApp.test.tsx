@@ -80,4 +80,66 @@ describe("ChatApp", () => {
       expect(document.body.textContent).toContain("My test question");
     });
   });
+
+  it("renders the explanation panel when an explanation event is present", async () => {
+    const events = [
+      `data: ${JSON.stringify({ type: "route", route: "workout_generate" })}`,
+      `data: ${JSON.stringify({
+        type: "structured",
+        payload: { blocks: [] },
+      })}`,
+      `data: ${JSON.stringify({
+        type: "explanation",
+        reasons: [
+          {
+            claim: "excluded",
+            relation: "loads_joint",
+            subject: "Barbell Squat",
+            object: "knee",
+            detail: null,
+          },
+        ],
+      })}`,
+      `data: ${JSON.stringify({ type: "done" })}`,
+    ];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(makeSseResponse(events));
+
+    render(<ChatApp />);
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox"), {
+        target: { value: "chest workout, bad knee" },
+      });
+      fireEvent.submit(screen.getByRole("textbox").closest("form")!);
+    });
+
+    await waitFor(() => {
+      // The explanation panel summary and the exclusion line must be visible.
+      expect(document.body.textContent).toContain("Why these?");
+      expect(document.body.textContent).toMatch(/avoided knee/i);
+    });
+  });
+
+  it("does not render the explanation panel on a coach turn", async () => {
+    const events = [
+      `data: ${JSON.stringify({ type: "route", route: "coach" })}`,
+      `data: ${JSON.stringify({ type: "token", text: "Great question!" })}`,
+      `data: ${JSON.stringify({ type: "done" })}`,
+    ];
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(makeSseResponse(events));
+
+    render(<ChatApp />);
+    await act(async () => {
+      fireEvent.change(screen.getByRole("textbox"), {
+        target: { value: "What muscles does a squat work?" },
+      });
+      fireEvent.submit(screen.getByRole("textbox").closest("form")!);
+    });
+
+    await waitFor(() => {
+      expect(document.body.textContent).toContain("Great question!");
+    });
+
+    // The explanation panel must not appear on a coach turn.
+    expect(document.body.textContent).not.toContain("Why these?");
+  });
 });

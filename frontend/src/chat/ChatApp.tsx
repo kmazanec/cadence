@@ -10,7 +10,7 @@ import { initialChatState, reduceSSE } from "../render/dispatch";
 import { streamChat } from "./sseClient";
 import { WorkoutCardView } from "../render/WorkoutCardView";
 import { LogCardView } from "../render/LogCardView";
-import type { Route, SSEEvent, StructuredPayload } from "../types/api";
+import type { Reason, Route, SSEEvent, StructuredPayload } from "../types/api";
 
 interface Message {
   role: "user" | "assistant";
@@ -19,6 +19,8 @@ interface Message {
   // Human-readable thinking lines (never raw JSON). Persist after the answer.
   thinkingLines?: string[];
   structured?: StructuredPayload | null;
+  // Structured reasons from the agent (workout turns only).
+  explanation?: Reason[];
   isStreaming?: boolean;
 }
 
@@ -65,6 +67,7 @@ export default function ChatApp() {
             route: chatState.route,
             thinkingLines: chatState.thinkingLines,
             structured: chatState.structured,
+            explanation: chatState.explanation,
           };
         }
         return next;
@@ -177,6 +180,7 @@ export default function ChatApp() {
                   {msg.structured && msg.route === "workout_generate" && (
                     <WorkoutCardView
                       payload={msg.structured as Parameters<typeof WorkoutCardView>[0]["payload"]}
+                      reasons={msg.explanation ?? []}
                     />
                   )}
                   {msg.structured && msg.route === "workout_log" && (

@@ -1,15 +1,24 @@
 /**
- * WorkoutCardView: renders a WorkoutPayload as a branded card.
+ * WorkoutCardView: renders a WorkoutPayload as a branded card with an optional
+ * explanation panel.
  *
  * The card's shape comes from the pure `renderWorkoutCard` shaper; this
  * component only maps that shape onto brand tokens (no ad-hoc colors/spacing).
- * Structured content always renders as a card, never as raw JSON.
+ * Structured content always renders as a card, never as raw JSON. When reasons
+ * are present the ExplanationPanel appears collapsed below the exercise list.
  */
 
 import { renderWorkoutCard } from "./WorkoutCard";
-import type { WorkoutPayload } from "../types/api";
+import { ExplanationPanel } from "./ExplanationPanel";
+import type { Reason, WorkoutPayload } from "../types/api";
 
-export function WorkoutCardView({ payload }: { payload: WorkoutPayload }) {
+interface Props {
+  payload: WorkoutPayload;
+  /** Structured reasons from the agent — rendered as a collapsed disclosure. */
+  reasons?: Reason[];
+}
+
+export function WorkoutCardView({ payload, reasons = [] }: Props) {
   const card = renderWorkoutCard(payload);
 
   return (
@@ -33,6 +42,8 @@ export function WorkoutCardView({ payload }: { payload: WorkoutPayload }) {
           </ul>
         </div>
       ))}
+
+      <ExplanationPanel reasons={reasons} />
     </div>
   );
 }
