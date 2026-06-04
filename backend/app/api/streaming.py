@@ -4,9 +4,10 @@ the encoder that puts one on the wire.
 Token events originate only from the reply-producing node's model deltas;
 thinking events carry every OTHER node's model deltas (the router deciding, a
 subagent working) as deemphasized progress, never as the reply. Route,
-structured, and clarification events are read from committed graph state, never
-reconstructed from message deltas. Error events carry a human-meaningful message
-and never a traceback, prompt, or secret. The variant set is closed.
+structured, explanation, and clarification events are read from committed graph
+state, never reconstructed from message deltas. Error events carry a
+human-meaningful message and never a traceback, prompt, or secret. The variant
+set is closed.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from typing import Literal, assert_never
 from pydantic import BaseModel
 
 from ..agents.generator.schemas import WorkoutPayload
+from ..graph.explanation import Reason
 from ..graph.routing import Route
 from .schemas import LogPayload
 
@@ -56,6 +58,18 @@ class StructuredEvent(BaseModel):
     payload: WorkoutPayload | LogPayload
 
 
+class ExplanationEvent(BaseModel):
+    """The turn's reasoning, read from committed graph state.
+
+    Carries the controlled-vocabulary :class:`Reason` triples the agent produced
+    this turn so the client can render why a decision was made — never the
+    reply text itself.
+    """
+
+    type: Literal["explanation"] = "explanation"
+    reasons: list[Reason]
+
+
 class ClarificationEvent(BaseModel):
     type: Literal["clarification"] = "clarification"
     question: str
@@ -76,6 +90,7 @@ SSEEvent = (
     | TokenEvent
     | ThinkingEvent
     | StructuredEvent
+    | ExplanationEvent
     | ClarificationEvent
     | DoneEvent
     | ErrorEvent
@@ -95,6 +110,7 @@ def encode_sse(event: SSEEvent) -> str:
             | TokenEvent()
             | ThinkingEvent()
             | StructuredEvent()
+            | ExplanationEvent()
             | ClarificationEvent()
             | DoneEvent()
             | ErrorEvent()

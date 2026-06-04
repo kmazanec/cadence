@@ -83,6 +83,10 @@ Cadence speaks like a knowledgeable training partner, not a clinician or a bot.
 Assistant replies and clarification prompts both follow this voice. UI copy
 matches it too: "Let's build something today.", "Finding your rhythm…".
 
+The backend's user-facing copy is centralized in `backend/app/voice.py`
+(`VOICE_PREAMBLE`, `clarification_fallback`, `GENERATOR_FAILURE_MESSAGE`,
+`RECOVERY_ERROR_MESSAGE`) so every surface speaks with one voice.
+
 ## Chrome
 
 Chat-first with light chrome (no full nav):
