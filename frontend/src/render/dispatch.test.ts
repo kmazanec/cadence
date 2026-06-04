@@ -11,6 +11,18 @@ describe("reduceSSE", () => {
       { type: "thinking", source: "router", text: "rou" },
       { type: "thinking", source: "router", text: "ting" },
       { type: "structured", payload: { blocks: [] } },
+      {
+        type: "explanation",
+        reasons: [
+          {
+            claim: "excluded",
+            relation: "loads_joint",
+            subject: "Barbell Squat",
+            object: "knee",
+            detail: null,
+          },
+        ],
+      },
       { type: "clarification", question: "Which?", options: ["a", "b"] },
       { type: "done" },
       { type: "error", message: "snag" },
@@ -19,9 +31,46 @@ describe("reduceSSE", () => {
     expect(state.route).toBe("coach");
     expect(state.replyText).toBe("Hello");
     expect(state.structured).not.toBeNull();
+    expect(state.explanation).toHaveLength(1);
+    expect(state.explanation[0].claim).toBe("excluded");
     expect(state.clarification).not.toBeNull();
     expect(state.done).toBe(true);
     expect(state.error).toBe("snag");
+  });
+
+  it("stores explanation reasons from explanation event", () => {
+    const events: SSEEvent[] = [
+      { type: "route", route: "workout_generate" },
+      {
+        type: "explanation",
+        reasons: [
+          {
+            claim: "excluded",
+            relation: "loads_joint",
+            subject: "Barbell Squat",
+            object: "knee",
+            detail: null,
+          },
+          {
+            claim: "added",
+            relation: "bilateral_pair_of",
+            subject: "Right Curl",
+            object: "Left Curl",
+            detail: null,
+          },
+        ],
+      },
+      { type: "done" },
+    ];
+    const state = events.reduce(reduceSSE, initialChatState());
+    expect(state.explanation).toHaveLength(2);
+    expect(state.explanation[0].claim).toBe("excluded");
+    expect(state.explanation[1].claim).toBe("added");
+  });
+
+  it("initialChatState has empty explanation array", () => {
+    const state = initialChatState();
+    expect(state.explanation).toEqual([]);
   });
 
   it("parses router thinking into readable lines, never raw JSON", () => {

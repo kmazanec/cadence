@@ -16,7 +16,7 @@ import { LogCardView } from "../render/LogCardView";
 import { AppHeader } from "../chrome/AppHeader";
 import { QuickActions } from "../chrome/QuickActions";
 import { CadenceMark } from "../brand/CadenceMark";
-import type { Route, SSEEvent, StructuredPayload } from "../types/api";
+import type { Reason, Route, SSEEvent, StructuredPayload } from "../types/api";
 
 interface Message {
   role: "user" | "assistant";
@@ -25,6 +25,8 @@ interface Message {
   // Human-readable thinking lines (never raw JSON). Persist after the answer.
   thinkingLines?: string[];
   structured?: StructuredPayload | null;
+  // Structured reasons from the agent (workout turns only).
+  explanation?: Reason[];
   isStreaming?: boolean;
 }
 
@@ -91,6 +93,7 @@ export default function ChatApp() {
             route: chatState.route,
             thinkingLines: chatState.thinkingLines,
             structured: chatState.structured,
+            explanation: chatState.explanation,
           };
         }
         return next;
@@ -312,6 +315,7 @@ function MessageBubble({ msg }: { msg: Message }) {
             payload={
               msg.structured as Parameters<typeof WorkoutCardView>[0]["payload"]
             }
+            reasons={msg.explanation ?? []}
           />
         )}
         {msg.structured && msg.route === "workout_log" && (

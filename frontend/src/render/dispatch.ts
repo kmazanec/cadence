@@ -5,6 +5,7 @@
 
 import type {
   ChatResponse,
+  Reason,
   Route,
   SSEEvent,
   StructuredPayload,
@@ -31,6 +32,8 @@ export interface ChatState {
   // what the UI shows; it never contains raw JSON. Persists after the answer.
   thinkingLines: string[];
   structured: StructuredPayload | null;
+  // Structured reasons the agent produced this turn (workout turns only).
+  explanation: Reason[];
   clarification: { question: string; options: string[] } | null;
   error: string | null;
   done: boolean;
@@ -43,6 +46,7 @@ export function initialChatState(): ChatState {
     thinking: emptyThinkingBuffers(),
     thinkingLines: [],
     structured: null,
+    explanation: [],
     clarification: null,
     error: null,
     done: false,
@@ -62,6 +66,8 @@ export function reduceSSE(state: ChatState, event: SSEEvent): ChatState {
     }
     case "structured":
       return { ...state, structured: event.payload };
+    case "explanation":
+      return { ...state, explanation: event.reasons };
     case "clarification":
       return {
         ...state,
