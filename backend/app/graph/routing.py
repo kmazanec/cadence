@@ -94,12 +94,6 @@ def decide_route(
     Returns ``(route, None)`` when a decision is present and confident enough;
     otherwise ``(None, clarification)`` — covering both a below-threshold
     decision and a missing decision (e.g. structured output failed).
-
-    The inline fallback copy is kept in sync with ``app.voice.clarification_fallback``
-    so callers that use either path see consistent wording. This module cannot
-    import ``app.voice`` directly (that would create a circular import, since
-    voice imports ``ClarificationPrompt`` from here); hub.py uses the voice module
-    directly for the clarify node.
     """
 
     if decision is not None and decision.confidence >= CONFIDENCE_THRESHOLD:
@@ -107,14 +101,9 @@ def decide_route(
 
     clarification = decision.clarification if decision is not None else None
     if clarification is None:
-        clarification = ClarificationPrompt(
-            question="Tell me a bit more about what you'd like to do.",
-            options=[
-                "Ask a fitness question",
-                "Build me a workout",
-                "Log a workout I did",
-            ],
-        )
+        from app.voice import clarification_fallback  # lazy import breaks the circular dependency
+
+        clarification = clarification_fallback()
     return None, clarification
 
 
