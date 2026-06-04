@@ -120,7 +120,8 @@ export default function ChatApp() {
           if (last && last.role === "assistant") {
             next[next.length - 1] = {
               ...last,
-              content: "Something went wrong — give that another shot.",
+              content:
+                "Something tripped up on my end — give it another go and we'll pick up right where we left off.",
               isStreaming: false,
             };
           }

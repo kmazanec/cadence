@@ -28,6 +28,7 @@ from ..api.streaming import (
     TokenEvent,
     encode_sse,
 )
+from ..voice import RECOVERY_ERROR_MESSAGE
 from ..graph.hub import build_hub
 from ..graph.response_assembly import assemble_response
 from ..graph.state import HubState
@@ -166,7 +167,7 @@ async def _stream_chat(request: ChatRequest) -> AsyncIterator[str]:
         # frame, so the client would receive an empty body instead of the
         # error event this boundary promises (ADR-006/014).
         logger.exception("Unhandled error in /chat stream")
-        yield encode_sse(ErrorEvent(message="Something went wrong — please try again."))
+        yield encode_sse(ErrorEvent(message=RECOVERY_ERROR_MESSAGE))
 
     finally:
         # Restore the ContextVar to its previous state so the value does not
