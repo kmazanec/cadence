@@ -66,14 +66,18 @@ async def run_eval(
 
     for case in cases:
         start = time.perf_counter()
-        decision = await classify(case.message, model)
+        try:
+            decision = await classify(case.message, model)
+        except Exception:
+            decision = None
         latency = time.perf_counter() - start
 
         route, _ = decide_route(decision)
 
         if case.ambiguous:
-            # Any outcome (clarify or dispatch) is acceptable for ambiguous cases.
-            correct = True
+            # Ambiguous cases verify the clarify-not-dispatch path: correct only
+            # when the router did NOT confidently dispatch (route is None).
+            correct = route is None
         else:
             correct = route == case.expected_route
 
