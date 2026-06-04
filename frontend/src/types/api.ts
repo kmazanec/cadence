@@ -93,6 +93,7 @@ export type SSEEvent =
   | { type: "token"; text: string }
   | { type: "thinking"; source: string; text: string }
   | { type: "structured"; payload: StructuredPayload }
+  | { type: "explanation"; reasons: Reason[] }
   | { type: "clarification"; question: string; options: string[] }
   | { type: "done" }
   | { type: "error"; message: string };

@@ -13,10 +13,12 @@ export default {
       colors: {
         background: "#FFFFFF",
         surface: "#FAFAFA",
+        "surface-sunken": "#F1F3F5", // Recessed surface for nested cards/insets.
         "text-primary": "#1A1A1A",
         "text-secondary": "#6B7280",
         border: "#E5E7EB",
         accent: "#00C2A8", // UNCONFIRMED — teal/cyan-green family default.
+        "accent-deep": "#00A38E", // Darkened accent for text/hover on light surfaces.
       },
       fontFamily: {
         sans: [

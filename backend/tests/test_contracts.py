@@ -18,6 +18,7 @@ from app.api.streaming import (
     ClarificationEvent,
     DoneEvent,
     ErrorEvent,
+    ExplanationEvent,
     RouteEvent,
     SSEEvent,
     StructuredEvent,
@@ -317,10 +318,12 @@ def test_assemble_clarification_no_subgraph() -> None:
 
 def test_encode_every_sse_variant() -> None:
     workout = WorkoutPayload(blocks=[])
+    reason = Reason(claim="note", subject="coach", relation="name_match")
     events: list[SSEEvent] = [
         RouteEvent(route=Route.COACH),
         TokenEvent(text="hi"),
         StructuredEvent(payload=workout),
+        ExplanationEvent(reasons=[reason]),
         ClarificationEvent(question="Which?", options=["a", "b"]),
         DoneEvent(),
         ErrorEvent(message="something went wrong"),

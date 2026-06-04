@@ -24,6 +24,10 @@ Cadence speaks like a knowledgeable training partner, not a clinician or a bot.
 
 Assistant replies and clarification prompts both follow this voice.
 
+The backend's user-facing copy is centralized in `backend/app/voice.py`
+(`VOICE_PREAMBLE`, `clarification_fallback`, `GENERATOR_FAILURE_MESSAGE`,
+`RECOVERY_ERROR_MESSAGE`) so every surface speaks with one voice.
+
 ## Accent color — UNCONFIRMED
 
 The `accent` token is set to `#00C2A8`, a teal/cyan-green-family default. The

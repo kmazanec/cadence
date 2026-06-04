@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from enum import Enum
 
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 # Below this routing confidence the hub asks a clarifying question rather than
@@ -107,3 +109,27 @@ def decide_route(
             ],
         )
     return None, clarification
+
+
+async def classify(
+    message: str,
+    model: BaseChatModel,
+    prior: list = [],  # noqa: B006 — read-only; never mutated.
+) -> RoutingDecision | None:
+    """Classify one user turn into a :class:`RoutingDecision`.
+
+    Drives the router's structured output with the routing system prompt, the
+    prior thread messages, and the current turn. Returns ``None`` when the model
+    fails to produce a parseable decision, leaving the confidence gate
+    (:func:`decide_route`) to fall back to a clarifying question.
+    """
+
+    structured = model.with_structured_output(RoutingDecision, include_raw=True)
+    router_input = (
+        [SystemMessage(content=ROUTER_SYSTEM_PROMPT)]
+        + list(prior)
+        + [HumanMessage(content=message)]
+    )
+    raw_result: dict = await structured.ainvoke(router_input)
+    parsed = raw_result.get("parsed")
+    return parsed if isinstance(parsed, RoutingDecision) else None
