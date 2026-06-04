@@ -76,3 +76,17 @@ callers are unaffected.
   `<details>` collapsed by default, each reason type, `<summary>` with "Why these?".
 - Dispatch tests updated: `explanation` event handled, `initialChatState` has `[]`.
 - 2 ChatApp integration tests: explanation panel appears on workout turn; absent on coach turn.
+
+### Build outcome
+
+- **Shippable:** yes. Cherry-picked clean onto `integration/04-stretch`. Shares `chat.py` and
+  `ChatApp.tsx` with F-12; the predicted textual convergence auto-merged (disjoint regions) with no
+  manual resolution needed.
+- **Acceptance:** met. PRD req 17 (committed stretch, previews M5 explainability) traced; AC 1-3
+  satisfied — expandable on-brand panel collapsed by default, lists human-readable reasons, hidden
+  when there are none.
+- **Unresolved gating:** none.
+- **Deferred:** none.
+- **QA evidence:** frontend "51 passed (7 files)" incl. `ExplanationPanel.test.tsx` 8 + ChatApp
+  integration; backend `test_explanation_stream.py` confirms the `ExplanationEvent` frames before
+  `done`. Live SSE stack returns the centralized error copy on the failure path, confirming wiring.

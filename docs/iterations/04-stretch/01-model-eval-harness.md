@@ -62,3 +62,15 @@ Req 16 (committed stretch), supports req 24 (evaluation story).
   "any reasonable outcome" — enforcing a specific route would make the test brittle and misleading.
 - The CLI accepts positional model IDs, defaulting to `MODEL_CONFIG["router"]`, so comparing two
   models is `uv run python -m eval.harness openai/gpt-4o-mini openai/gpt-4o` — no code change.
+
+### Build outcome
+
+- **Shippable:** yes. Cherry-picked clean onto `integration/04-stretch` (no convergence with F-11/F-12).
+- **Acceptance:** met. PRD req 16/24 (evaluation story) traced; AC 1-3 satisfied — harness runs
+  end-to-end against the fake model, prints per-model accuracy + avg latency, ambiguous cases scored
+  by clarify path, model swap is config-only.
+- **Unresolved gating:** none.
+- **Deferred:** real-model split-test run is documented/optional (needs candidate-model API keys);
+  not run in CI.
+- **QA evidence:** `backend/tests/test_routing_eval.py` — "28 passed" across the three stretch
+  suites in the assembled integration run; full backend suite "286 passed, 5 skipped".

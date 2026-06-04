@@ -91,3 +91,23 @@ Generator and logger emit cards, not prose — their AC1 contribution is the pre
 (the preamble sits at the top of every prompt slot they'd use) plus the failure/fallback copy for
 the hub-level boundary nodes. Overall warmth/cohesion and the card-agents' prose are human-review
 against BRAND.md.
+
+### Build outcome
+
+- **Shippable:** yes. Cherry-picked clean onto `integration/04-stretch`; the predicted convergence
+  with F-11 in `chat.py` and `ChatApp.tsx` auto-merged (disjoint regions), no manual resolution.
+- **Acceptance:** met for the verifiable slices. PRD req 18 (committed stretch, extends req 20 voice
+  + brand contract) traced; AC 2 (clarification/recovery copy routed through the voice layer, not
+  hardcoded generics) is asserted by tests; AC 1/3 (overall warmth, distinct-from-default tone) are
+  partly subjective and flagged for human review per the spec.
+- **Live evidence:** the assembled SSE error frame returned the centralized
+  `RECOVERY_ERROR_MESSAGE` copy verbatim ("Something tripped up on my end. Give it another go and
+  we'll pick up right where we left off."), confirming the voice layer is wired through `chat.py`
+  end-to-end, not just unit-tested.
+- **Unresolved gating:** none.
+- **Deferred / manual-review:** the frontend client-side stream-break fallback in `ChatApp.tsx` uses
+  an em-dash variant of the recovery copy (separate code path from the backend frame); intentionally
+  on-voice but not byte-identical to the backend constant — left for human voice review. AC 1/3
+  warmth/cohesion across card-agent prose remains a subjective human check against BRAND.md.
+- **QA evidence:** `test_voice_layer.py` "28 passed" within the three stretch suites; full backend
+  "286 passed, 5 skipped"; frontend "51 passed".
